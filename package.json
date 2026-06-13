@@ -1,6 +1,6 @@
 {
   "name": "minutodev.api",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "",
   "author": "",
   "private": true,
@@ -12,12 +12,17 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "test": "npx jest --passWithNoTests --silent --runInBand",
+    "test:watch": "npm run test -- --watch",
+    "test:coverage": "npm run test -- --coverage",
+    "test:ci": "npm run test -- --ci --coverage ",
+    "test:all:coverage": "npm run test:coverage && npm run test:integration:coverage",
+    "test:integration": "npm run test -- --config jest-integration.config.ts",
+    "test:integration:watch": "npm run test:integration -- --watch",
+    "test:integration:coverage": "npm run test:integration -- --coverage",
+    "test:integration:ci": "npm run test:integration -- --ci --coverage",
+    "test:all": "npm run test && npm run test:integration"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -27,21 +32,31 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@eslint/compat": "file:typescript-eslint/eslint-plugin@typescript-eslint/parsereslinteslint-config-prettiereslint-plugin-simple-import-sorteslint-plugin-prettiereslint-import-resolver-aliaseslint-import-resolver-typescripteslint-plugin-importeslint-plugin-no-relative-import-pathseslint-plugin-project-structure",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@shelf/jest-mongodb": "^6.0.2",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/mongodb": "^4.0.6",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.61.0",
+    "@typescript-eslint/parser": "^8.61.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-no-relative-import-paths": "^1.6.1",
     "eslint-plugin-prettier": "^5.2.2",
+    "eslint-plugin-simple-import-sort": "^13.0.0",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
-    "prettier": "^3.4.2",
+    "lint-staged": "^17.0.7",
+    "prettier": "^3.8.4",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
@@ -50,22 +65,5 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
-  },
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
   }
 }
