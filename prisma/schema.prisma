@@ -74,5 +74,6 @@ model Content {
 
   @@index([sourceId])
   @@index([status])
+  @@index([publishedAt(sort: Desc), collectedAt(sort: Desc)])
   @@map("contents")
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ContentsController } from './contents.controller';
 import { ContentsService } from './contents.service';
 
 /**
@@ -9,6 +10,7 @@ import { ContentsService } from './contents.service';
  * crawlers de RSS/GitHub) sem reimplementar o acesso aos conteúdos.
  */
 @Module({
+  controllers: [ContentsController],
   providers: [ContentsService],
   exports: [ContentsService],
 })

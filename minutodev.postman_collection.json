@@ -1,0 +1,134 @@
+{
+  "info": {
+    "name": "minutoDev API",
+    "description": "minutoDev HTTP API. Importe esta collection no Postman e ajuste a variável `baseUrl` se necessário (padrão: http://localhost:3500).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3500",
+      "type": "string"
+    },
+    {
+      "key": "contentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sourceId",
+      "value": "9b7a1d8f-0e81-4f1a-b630-897fa7d40353",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Get Hello (root)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Endpoint raiz da aplicação. Retorna uma string de health/hello."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contents",
+      "item": [
+        {
+          "name": "List contents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/contents?page=1&limit=20&category=backend&source={{sourceId}}&status=VISIBLE",
+              "host": ["{{baseUrl}}"],
+              "path": ["contents"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Página (>= 1). Padrão: 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (1-100). Padrão: 20."
+                },
+                {
+                  "key": "category",
+                  "value": "backend",
+                  "description": "Filtra por categoria. (opcional)",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "{{sourceId}}",
+                  "description": "Filtra por id da fonte. (opcional)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "VISIBLE",
+                  "description": "Filtra por status: NEW | VISIBLE | HIDDEN | ARCHIVED. (opcional)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Lista conteúdo coletado de forma paginada, com filtros opcionais por categoria, fonte e status."
+          },
+          "response": []
+        },
+        {
+          "name": "List today's contents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/contents/today?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["contents", "today"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Página (>= 1). Padrão: 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Itens por página (1-100). Padrão: 20."
+                }
+              ]
+            },
+            "description": "Lista o conteúdo publicado ou coletado no dia atual (UTC), de forma paginada."
+          },
+          "response": []
+        },
+        {
+          "name": "Get content by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/contents/{{contentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["contents", "{{contentId}}"]
+            },
+            "description": "Retorna um item de conteúdo pelo id, incluindo os detalhes da fonte (source). Retorna 404 se não encontrado."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
