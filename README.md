@@ -100,6 +100,49 @@ Interface visual para inspecionar os dados:
 $ npm run prisma:studio
 ```
 
+## Ingestão de conteúdos (RSS)
+
+O módulo [`ingestion`](src/modules/ingestion) busca os feeds das `Source`
+habilitadas (`enabled = true` e `type = RSS`), normaliza cada item para o
+modelo `Content` e grava no banco.
+
+- **Deduplicação:** `Content.url` é único; itens já existentes são ignorados
+  com segurança (não quebram a execução).
+- **Resiliência:** a falha de uma source (ou de um item) é registrada e
+  contabilizada, mas não interrompe as demais.
+
+Execução manual via terminal:
+
+```bash
+$ npm run ingestion:rss
+```
+
+> **Manual vs. produção:** o `ingestion:rss` roda via `ts-node` — ótimo para
+> execução manual em desenvolvimento. Para agendador/produção, prefira o
+> caminho compilado (mais robusto e rápido, sem transpilação em runtime):
+>
+> ```bash
+> $ npm run build
+> $ node dist/modules/ingestion/ingestion.cli.js
+> ```
+
+Ao final, é impresso um resumo da execução:
+
+```text
+┌──────────────────┬────────┐
+│ (index)          │ Values │
+├──────────────────┼────────┤
+│ sourcesProcessed │ 6      │
+│ itemsFound       │ 1075   │
+│ created          │ 23     │
+│ duplicates       │ 1052   │
+│ errors           │ 0      │
+└──────────────────┴────────┘
+```
+
+> Ainda **não** há endpoints públicos, agendamento (cron) nem cálculo de
+> score/relevância — isso fica para etapas seguintes.
+
 ## Compile and run the project
 
 ```bash

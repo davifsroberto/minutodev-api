@@ -4,10 +4,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { ContentsModule } from './modules/contents/contents.module';
+import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { SourcesModule } from './modules/sources/sources.module';
 
 @Module({
-  imports: [DatabaseModule, SourcesModule, ContentsModule],
+  imports: [DatabaseModule, SourcesModule, ContentsModule, IngestionModule],
   controllers: [AppController],
   providers: [AppService],
 })

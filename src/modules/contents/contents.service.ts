@@ -30,4 +30,28 @@ export class ContentsService {
   create(data: Prisma.ContentCreateInput): Promise<Content> {
     return this.prisma.content.create({ data });
   }
+
+  /**
+   * Cria um conteúdo de forma segura para duplicidade.
+   *
+   * Como `Content.url` é único, uma colisão dispara o erro P2002 do Prisma —
+   * tratamos como duplicado (`'duplicate'`) em vez de propagar, permitindo que
+   * a ingestão continue. Qualquer outro erro é repropagado.
+   */
+  async createIfNew(
+    data: Prisma.ContentUncheckedCreateInput,
+  ): Promise<'created' | 'duplicate'> {
+    try {
+      await this.prisma.content.create({ data });
+      return 'created';
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        return 'duplicate';
+      }
+      throw error;
+    }
+  }
 }

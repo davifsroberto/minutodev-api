@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { Prisma, Source } from '@prisma/client';
+import { Prisma, Source, SourceType } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 
@@ -21,6 +21,10 @@ export class SourcesService {
 
   findEnabled(): Promise<Source[]> {
     return this.prisma.source.findMany({ where: { enabled: true } });
+  }
+
+  findEnabledByType(type: SourceType): Promise<Source[]> {
+    return this.prisma.source.findMany({ where: { enabled: true, type } });
   }
 
   findById(id: string): Promise<Source | null> {
