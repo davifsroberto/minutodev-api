@@ -65,6 +65,7 @@ export class IngestionService {
       for (const item of feedItems) {
         try {
           const data = this.normalizer.normalize(item, source);
+
           if (!data) {
             summary.errors += 1;
             this.logger.warn(`Item sem URL ignorado em "${source.name}".`);
@@ -72,6 +73,7 @@ export class IngestionService {
           }
 
           const result = await this.contents.createIfNew(data);
+
           if (result === 'created') {
             summary.created += 1;
           } else {

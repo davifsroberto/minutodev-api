@@ -23,9 +23,7 @@ export class RssNormalizerService {
     source: Source,
   ): Prisma.ContentUncheckedCreateInput | null {
     const url = item.link ?? item.guid;
-    if (!url) {
-      return null;
-    }
+    if (!url) return null;
 
     // `rawSummary` preserva a descrição original; `summary` usa a versão mais
     // "limpa" (contentSnippet) quando disponível.

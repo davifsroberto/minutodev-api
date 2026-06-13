@@ -3,9 +3,11 @@ import { Injectable } from '@nestjs/common';
 import Parser from 'rss-parser';
 
 /** Item de feed RSS já parseado (campos conhecidos + extras arbitrários). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RssItem = Parser.Item & { [key: string]: any };
 
 /** Feed RSS parseado. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RssFeed = Parser.Output<{ [key: string]: any }>;
 
 /**
