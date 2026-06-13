@@ -1,0 +1,78 @@
+// minutoDev — Prisma schema
+// Persistência das fontes (Source) e conteúdos coletados (Content) de RSS/API.
+// Conexão configurada via variável de ambiente DATABASE_URL (PostgreSQL).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Tipo da fonte de conteúdo.
+enum SourceType {
+  RSS
+  GITHUB
+}
+
+/// Natureza do conteúdo coletado.
+enum ContentType {
+  ARTICLE
+  RELEASE
+  TOOL
+  DISCUSSION
+  REPOSITORY
+}
+
+/// Ciclo de vida do conteúdo dentro do radar.
+enum ContentStatus {
+  NEW
+  VISIBLE
+  HIDDEN
+  ARCHIVED
+}
+
+/// Fonte de conteúdo (feed RSS, repositório GitHub, etc.).
+model Source {
+  id        String     @id @default(uuid())
+  name      String
+  type      SourceType
+  url       String     @unique
+  category  String
+  enabled   Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  contents Content[]
+
+  @@map("sources")
+}
+
+/// Conteúdo coletado a partir de uma Source.
+model Content {
+  id          String        @id @default(uuid())
+  sourceId    String
+  title       String
+  url         String        @unique
+  summary     String?
+  author      String?
+  publishedAt DateTime?
+  collectedAt DateTime      @default(now())
+  category    String?
+  tags        String[]
+  contentType ContentType
+  rawTitle    String?
+  rawSummary  String?
+  rawData     Json?
+  score       Int           @default(0)
+  status      ContentStatus @default(NEW)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@index([status])
+  @@map("contents")
+}

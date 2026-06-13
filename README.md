@@ -31,6 +31,75 @@
 $ npm install
 ```
 
+## Database (PostgreSQL + Prisma)
+
+A persistência usa **PostgreSQL** com **Prisma ORM** (Prisma 7). O schema, os
+models (`Source`, `Content`), enums e migrations ficam em [`prisma/`](prisma/).
+
+> **Prisma 7:** a conexão é feita por um _driver adapter_
+> ([`@prisma/adapter-pg`](https://www.npmjs.com/package/@prisma/adapter-pg)).
+> A connection string para as migrations/seed/Studio vive em
+> [`prisma.config.ts`](prisma.config.ts) e, em runtime, é lida pelo
+> `PrismaService` a partir de `DATABASE_URL`.
+
+### 1. Configurar a `DATABASE_URL`
+
+Copie o arquivo de exemplo e ajuste os valores para o seu Postgres local
+(rodando via Docker):
+
+```bash
+$ cp .env.example .env
+```
+
+> ⚠️ **Crie o `.env` antes de qualquer comando `prisma:*`.** O
+> [`prisma.config.ts`](prisma.config.ts) lê `DATABASE_URL` via `env()` e
+> **falha** se a variável não existir — inclusive no `prisma:generate`, que por
+> si só não usa o banco, mas avalia a configuração ao iniciar.
+
+A `DATABASE_URL` segue o formato (o exemplo **não** é definitivo):
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/minutodev?schema=public"
+```
+
+No `.env` ela é composta a partir de partes (`DATABASE_HOST`, `DATABASE_PORT`,
+`DATABASE_USERNAME`, `DATABASE_PASSWORD`, `DATABASE_NAME`) usando expansão de
+variáveis (`${...}`), suportada pelo `dotenv-expand` e pelo Prisma.
+
+### 2. Gerar o Prisma Client
+
+Requer o `.env` do passo anterior.
+
+```bash
+$ npm run prisma:generate
+```
+
+### 3. Rodar as migrations
+
+Cria/aplica as migrations no banco (a primeira migration é
+`init_sources_and_contents`). Em ambiente de desenvolvimento:
+
+```bash
+$ npm run prisma:migrate
+```
+
+### 4. Popular as fontes iniciais (seed)
+
+Cadastra as fontes RSS da V1. O seed é **idempotente** — pode ser executado
+mais de uma vez sem duplicar fontes:
+
+```bash
+$ npm run prisma:seed
+```
+
+### 5. Abrir o Prisma Studio
+
+Interface visual para inspecionar os dados:
+
+```bash
+$ npm run prisma:studio
+```
+
 ## Compile and run the project
 
 ```bash
