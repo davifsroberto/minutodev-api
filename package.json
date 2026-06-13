@@ -27,7 +27,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
-    "ingestion:rss": "ts-node src/modules/ingestion/ingestion.cli.ts"
+    "ingestion:rss": "ts-node src/modules/ingestion/ingestion.cli.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -67,6 +68,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "globals": "^17.0.0",
+    "husky": "^9.1.7",
     "jest": "^30.0.0",
     "lint-staged": "^17.0.7",
     "prettier": "^3.8.4",
