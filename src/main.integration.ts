@@ -4,9 +4,7 @@ import {
   INestApplication,
   Module,
   Query,
-  ValidationPipe,
 } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { Type } from 'class-transformer';
@@ -15,7 +13,7 @@ import request from 'supertest';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { configureBootstrapGlobals } from './bootstrap';
 
 class ValidationProbeQueryDto {
   @IsOptional()
@@ -39,34 +37,17 @@ class ValidationProbeController {
 })
 class BootstrapIntegrationModule {}
 
-const configureBootstrapGlobals = (app: INestApplication): void => {
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-    }),
-  );
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('minutoDev API')
-    .setDescription('minutoDev HTTP API')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-
-  SwaggerModule.setup('docs', app, document, {
-    jsonDocumentUrl: 'docs/json',
-  });
-};
-
 describe('main.ts bootstrap globals', () => {
   let app: INestApplication;
+  let previousCorsOrigins: string | undefined;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [BootstrapIntegrationModule],
     }).compile();
+
+    previousCorsOrigins = process.env.CORS_ORIGINS;
+    delete process.env.CORS_ORIGINS;
 
     app = moduleFixture.createNestApplication();
     configureBootstrapGlobals(app);
@@ -75,6 +56,12 @@ describe('main.ts bootstrap globals', () => {
 
   afterAll(async () => {
     await app.close();
+
+    if (previousCorsOrigins === undefined) {
+      delete process.env.CORS_ORIGINS;
+    } else {
+      process.env.CORS_ORIGINS = previousCorsOrigins;
+    }
   });
 
   it('keeps the root health route available without a global prefix', async () => {
@@ -136,5 +123,14 @@ describe('main.ts bootstrap globals', () => {
         paths: expect.any(Object),
       }),
     );
+  });
+
+  it('bootstraps without cross-origin access when CORS_ORIGINS is empty', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/')
+      .set('Origin', 'http://localhost:4500')
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 });

@@ -1,5 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -17,7 +16,7 @@ import { expand } from 'dotenv-expand';
 import request from 'supertest';
 
 import { AppModule } from '../../app.module';
-import { AllExceptionsFilter } from '../../common/filters/all-exceptions.filter';
+import { configureBootstrapGlobals } from '../../bootstrap';
 import { ContentsService } from '../contents/contents.service';
 import { RadarService } from './radar.service';
 
@@ -63,27 +62,6 @@ const RADAR_ITEM_KEYS = [
   'title',
   'url',
 ];
-
-const configureBootstrapGlobals = (app: INestApplication): void => {
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-    }),
-  );
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('minutoDev API')
-    .setDescription('minutoDev HTTP API')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-
-  SwaggerModule.setup('docs', app, document, {
-    jsonDocumentUrl: 'docs/json',
-  });
-};
 
 const expectErrorEnvelope = (
   body: ErrorEnvelope,
@@ -133,6 +111,9 @@ describe('RadarController integration', () => {
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
   });
 
+  const allowedOrigin = 'http://localhost:4500';
+  const disallowedOrigin = 'http://disallowed.example.test';
+  let previousCorsOrigins: string | undefined;
   let app: INestApplication;
   let source: Source;
   const currentNow = new Date('2099-09-15T14:00:00.000Z');
@@ -152,6 +133,9 @@ describe('RadarController integration', () => {
         inject: [ContentsService],
       })
       .compile();
+
+    previousCorsOrigins = process.env.CORS_ORIGINS;
+    process.env.CORS_ORIGINS = allowedOrigin;
 
     app = moduleFixture.createNestApplication();
     configureBootstrapGlobals(app);
@@ -294,6 +278,12 @@ describe('RadarController integration', () => {
     });
     await prisma.$disconnect();
     await app.close();
+
+    if (previousCorsOrigins === undefined) {
+      delete process.env.CORS_ORIGINS;
+    } else {
+      process.env.CORS_ORIGINS = previousCorsOrigins;
+    }
   });
 
   const getRadar = async (query = ''): Promise<RadarResponse> => {
@@ -445,4 +435,24 @@ describe('RadarController integration', () => {
       expectErrorEnvelope(response.body as ErrorEnvelope, status, error, path);
     },
   );
+
+  it('allows the configured origin via CORS on GET /radar/today', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/radar/today')
+      .set('Origin', allowedOrigin)
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBe(allowedOrigin);
+  });
+
+  it('does not echo a disallowed origin in Access-Control-Allow-Origin', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/radar/today')
+      .set('Origin', disallowedOrigin)
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).not.toBe(
+      disallowedOrigin,
+    );
+  });
 });
