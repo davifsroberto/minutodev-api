@@ -109,6 +109,28 @@ export class ContentsService {
     return { data, total };
   }
 
+  findEligibleForDay(
+    day: Date,
+    maxItems: number,
+  ): Promise<(Content & { source: Source })[]> {
+    const start = startOfUtcDay(day);
+    const end = endOfUtcDay(day);
+    const where: Prisma.ContentWhereInput = {
+      status: { in: [ContentStatus.NEW, ContentStatus.VISIBLE] },
+      OR: [
+        { publishedAt: { gte: start, lte: end } },
+        { collectedAt: { gte: start, lte: end } },
+      ],
+    };
+
+    return this.prisma.content.findMany({
+      where,
+      include: { source: true },
+      orderBy: contentOrderBy,
+      take: maxItems,
+    });
+  }
+
   create(data: Prisma.ContentCreateInput): Promise<Content> {
     return this.prisma.content.create({ data });
   }

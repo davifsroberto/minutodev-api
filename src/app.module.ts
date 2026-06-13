@@ -5,10 +5,17 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { ContentsModule } from './modules/contents/contents.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
+import { RadarModule } from './modules/radar/radar.module';
 import { SourcesModule } from './modules/sources/sources.module';
 
 @Module({
-  imports: [DatabaseModule, SourcesModule, ContentsModule, IngestionModule],
+  imports: [
+    DatabaseModule,
+    SourcesModule,
+    ContentsModule,
+    IngestionModule,
+    RadarModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

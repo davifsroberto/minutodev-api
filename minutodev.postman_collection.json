@@ -129,6 +129,39 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Radar",
+      "item": [
+        {
+          "name": "Get today's radar briefing",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/radar/today?date=2026-06-13&limitPerSection=4",
+              "host": ["{{baseUrl}}"],
+              "path": ["radar", "today"],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-06-13",
+                  "description": "Dia UTC do radar, no formato YYYY-MM-DD. Padrão: dia atual. (opcional)",
+                  "disabled": true
+                },
+                {
+                  "key": "limitPerSection",
+                  "value": "4",
+                  "description": "Máximo de itens por seção (1-20). Padrão: 4. (opcional)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Briefing temático do dia: agrupa o conteúdo elegível (NEW/VISIBLE) em quatro seções de chave estável (releases, tools, trends, recommended), cada item em apenas uma seção por prioridade, ordenado do mais recente para o mais antigo. Dia sem conteúdo retorna 200 com as quatro seções vazias."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

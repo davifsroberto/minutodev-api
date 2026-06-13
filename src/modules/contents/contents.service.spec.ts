@@ -242,6 +242,43 @@ describe('ContentsService', () => {
     });
   });
 
+  describe('findEligibleForDay', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-13T14:30:00.000Z'));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('finds eligible content for the supplied UTC day with source included', async () => {
+      const day = new Date('2026-05-20T18:45:30.000Z');
+      const start = new Date('2026-05-20T00:00:00.000Z');
+      const end = new Date('2026-05-20T23:59:59.999Z');
+      const source = createSource();
+      const rowsWithSource = [{ ...rows[0], source }];
+      prisma.content.findMany.mockResolvedValue(rowsWithSource);
+
+      await expect(service.findEligibleForDay(day, 500)).resolves.toBe(
+        rowsWithSource,
+      );
+
+      expect(prisma.content.findMany).toHaveBeenCalledTimes(1);
+      expect(findManyArgs()).toEqual({
+        where: {
+          status: { in: [ContentStatus.NEW, ContentStatus.VISIBLE] },
+          OR: [
+            { publishedAt: { gte: start, lte: end } },
+            { collectedAt: { gte: start, lte: end } },
+          ],
+        },
+        include: { source: true },
+        orderBy,
+        take: 500,
+      });
+    });
+  });
+
   describe('findById', () => {
     it('includes source and returns the resolved entity', async () => {
       const content = createContent();

@@ -103,9 +103,7 @@ export class ContentsController {
   async findById(@Param('id') id: string): Promise<ContentWithSource> {
     const content = await this.contentsService.findById(id);
 
-    if (content === null) {
-      throw new NotFoundException('Content not found');
-    }
+    if (content === null) throw new NotFoundException('Content not found');
 
     return content;
   }
