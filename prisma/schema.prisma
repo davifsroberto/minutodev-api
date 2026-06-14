@@ -33,6 +33,15 @@ enum ContentStatus {
   ARCHIVED
 }
 
+/// Status do enriquecimento de um Content (tradução/resumo). Hoje só PENDING
+/// (fallback sem IA); os demais estados preparam o pipeline de IA futuro.
+enum EnrichmentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 /// Fonte de conteúdo (feed RSS, repositório GitHub, etc.).
 model Source {
   id        String     @id @default(uuid())
@@ -70,10 +79,37 @@ model Content {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  source Source @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  source      Source              @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  enrichments ContentEnrichment[]
 
   @@index([sourceId])
   @@index([status])
   @@index([publishedAt(sort: Desc), collectedAt(sort: Desc)])
   @@map("contents")
+}
+
+/// Camada de entendimento/curadoria sobre um Content (tradução, resumo,
+/// pontos-chave). Nesta fase é preenchida com fallback do próprio Content;
+/// os campos provider/model/status preparam o enriquecimento por IA futuro.
+model ContentEnrichment {
+  id              String           @id @default(uuid())
+  contentId       String
+  language        String           @default("pt-BR")
+  translatedTitle String?
+  shortSummary    String?
+  whyItMatters    String?
+  keyPoints       String[]
+  briefContent    String?
+  originalUrl     String
+  provider        String?
+  model           String?
+  status          EnrichmentStatus @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, language])
+  @@map("content_enrichments")
 }
