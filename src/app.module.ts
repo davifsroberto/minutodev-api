@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { AiModule } from './modules/ai/ai.module';
 import { ContentsModule } from './modules/contents/contents.module';
 import { EnrichmentsModule } from './modules/enrichments/enrichments.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
@@ -15,6 +16,7 @@ import { SourcesModule } from './modules/sources/sources.module';
     SourcesModule,
     ContentsModule,
     EnrichmentsModule,
+    AiModule,
     IngestionModule,
     RadarModule,
   ],

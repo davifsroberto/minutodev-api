@@ -143,6 +143,42 @@ Ao final, é impresso um resumo da execução:
 > Ainda **não** há endpoints públicos, agendamento (cron) nem cálculo de
 > score/relevância — isso fica para etapas seguintes.
 
+## Inteligência Artificial (IA)
+
+O módulo [`ai`](src/modules/ai) fornece uma **camada de IA abstrata** para gerar
+conteúdo enriquecido (tradução/resumo em pt-BR) **sob demanda**. As regras de
+negócio dependem apenas da interface `LlmProvider` — nunca de um provedor
+concreto —, o que permite trocar de provedor (DeepSeek, OpenAI, Claude, Gemini,
+OpenRouter, Ollama) sem alterar o restante do sistema.
+
+- **`AiService`** (fachada): escolhe o provedor por `LLM_PROVIDER` e expõe
+  `enrichContent(input)`. Não conhece Prisma nem banco — apenas orquestra.
+- **`MockLlmProvider`** (padrão): não chama API externa, não gera custo e retorna
+  uma saída determinística derivada da entrada.
+- **`DeepSeekProvider`**: estrutura pronta para a API do DeepSeek (formato
+  compatível com OpenAI). Lê tudo de variáveis de ambiente, usa _timeout_ e trata
+  erros. Sem chave, falha com mensagem clara **apenas quando chamado** — o projeto
+  roda normalmente no provedor mock.
+
+> **Controle de custo:** nesta fase a IA é apenas infraestrutura. Não há job em
+> lote, fila ou cron; a ingestão RSS e o `GET /radar/today` **não** chamam IA. A
+> geração real será feita sob demanda em uma sprint futura — nenhuma chamada e
+> nenhum custo ocorrem sem ação explícita.
+
+### Variáveis de ambiente
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `mock` | Provedor ativo: `mock` ou `deepseek`. |
+| `DEEPSEEK_API_KEY` | _(vazio)_ | Chave da API DeepSeek. **Nunca** commite. |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base da API DeepSeek. |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | Modelo usado nas chamadas. |
+| `DEEPSEEK_TIMEOUT_MS` | `30000` | Tempo limite (ms) das chamadas. Opcional. |
+
+A chave de API **nunca** é logada nem versionada (`.env` está no `.gitignore`;
+veja o [`.env.example`](.env.example)). Para ativar o DeepSeek, defina
+`LLM_PROVIDER=deepseek` e `DEEPSEEK_API_KEY` no seu `.env`.
+
 ## Compile and run the project
 
 ```bash
