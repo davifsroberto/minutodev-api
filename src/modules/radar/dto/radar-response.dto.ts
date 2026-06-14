@@ -41,6 +41,15 @@ export class RadarItemDto {
   sourceName!: string;
 
   @ApiProperty({
+    description:
+      'Imagem de capa do conteúdo (RSS ou og:image). Nula quando indisponível — o cliente cai no placeholder.',
+    example: 'https://devblogs.microsoft.com/typescript/cover.png',
+    nullable: true,
+    type: String,
+  })
+  imageUrl!: string | null;
+
+  @ApiProperty({
     example: 'engineering',
     nullable: true,
     type: String,

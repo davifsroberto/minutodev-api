@@ -28,6 +28,7 @@ type RadarItemResponse = {
   summary: string | null;
   url: string;
   sourceName: string;
+  imageUrl: string | null;
   category: string | null;
   contentType: ContentType;
   publishedAt: string | null;
@@ -56,6 +57,7 @@ const RADAR_ITEM_KEYS = [
   'category',
   'contentType',
   'id',
+  'imageUrl',
   'publishedAt',
   'sourceName',
   'summary',
@@ -163,6 +165,7 @@ describe('RadarController integration', () => {
       createContentData(source, runId, 'release newest', {
         contentType: ContentType.RELEASE,
         category: 'engineering',
+        imageUrl: 'https://cdn.example.test/release-newest.png',
         status: ContentStatus.NEW,
         publishedAt: sameDay(12),
         collectedAt: sameDay(12),
@@ -355,6 +358,7 @@ describe('RadarController integration', () => {
       expect.objectContaining({
         title: 'release newest',
         sourceName: source.name,
+        imageUrl: 'https://cdn.example.test/release-newest.png',
         category: 'engineering',
         contentType: ContentType.RELEASE,
         summary: null,

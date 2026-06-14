@@ -24,6 +24,7 @@ describe('RadarResponseDto', () => {
     item.summary = null;
     item.url = 'https://devblogs.microsoft.com/typescript/';
     item.sourceName = 'TypeScript Blog';
+    item.imageUrl = 'https://devblogs.microsoft.com/typescript/cover.png';
     item.category = 'engineering';
     item.contentType = ContentType.RELEASE;
     item.publishedAt = new Date('2026-06-13T09:12:00.000Z');
@@ -47,6 +48,7 @@ describe('RadarResponseDto', () => {
               category: 'engineering',
               contentType: ContentType.RELEASE,
               id: '9b7a1d8f-0e81-4f1a-b630-897fa7d40353',
+              imageUrl: 'https://devblogs.microsoft.com/typescript/cover.png',
               publishedAt: new Date('2026-06-13T09:12:00.000Z'),
               sourceName: 'TypeScript Blog',
               summary: null,

@@ -140,6 +140,7 @@ export class RadarService {
       category: item.category,
       contentType: item.contentType,
       id: item.id,
+      imageUrl: item.imageUrl,
       publishedAt: item.publishedAt,
       sourceName: item.source.name,
       summary: item.summary,

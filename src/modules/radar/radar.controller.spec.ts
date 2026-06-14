@@ -25,6 +25,7 @@ const createResponse = (): RadarResponseDto => ({
           category: 'engineering',
           contentType: ContentType.RELEASE,
           id: 'release-1',
+          imageUrl: 'https://example.test/release-1.png',
           publishedAt: new Date('2026-06-13T09:00:00.000Z'),
           sourceName: 'Release Source',
           summary: 'A release summary.',
