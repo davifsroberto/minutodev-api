@@ -26,6 +26,8 @@ const mockOutput: EnrichContentOutput = {
   shortSummary: 's',
   whyItMatters: 'w',
   keyPoints: ['k'],
+  example: 'e',
+  whenToUse: 'u',
   briefContent: 'b',
 };
 

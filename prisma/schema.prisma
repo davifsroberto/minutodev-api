@@ -71,6 +71,7 @@ model Content {
   category    String?
   tags        String[]
   contentType ContentType
+  imageUrl    String?
   rawTitle    String?
   rawSummary  String?
   rawData     Json?
@@ -99,6 +100,8 @@ model ContentEnrichment {
   shortSummary    String?
   whyItMatters    String?
   keyPoints       String[]
+  example         String?
+  whenToUse       String?
   briefContent    String?
   originalUrl     String
   provider        String?

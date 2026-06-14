@@ -23,6 +23,17 @@ type ContentWithSource = Content & { source: Source };
 type GenerationClaim = { enrichment: ContentEnrichment; owned: boolean };
 
 /**
+ * Enriquecimento persistido + metadados do conteúdo (imagem, fonte, data) que o
+ * hero da página precisa. Composto em tempo de leitura a partir do `Content`,
+ * mantendo o `Content` como fonte única da imagem (sem denormalizar).
+ */
+export type EnrichmentView = ContentEnrichment & {
+  imageUrl: string | null;
+  sourceName: string;
+  publishedAt: Date | null;
+};
+
+/**
  * Enriquecimento (tradução/resumo/curadoria) de um Content, gerado sob demanda.
  *
  * Ao abrir um conteúdo, geramos a versão pt-BR via `AiService` apenas se ainda
@@ -44,15 +55,24 @@ export class EnrichmentsService {
   async getOrCreateForContent(
     contentId: string,
     language: string = DEFAULT_ENRICHMENT_LANGUAGE,
-  ): Promise<ContentEnrichment> {
+  ): Promise<EnrichmentView> {
     const content = await this.contentsService.findById(contentId);
 
     if (content === null) {
       throw new NotFoundException('Content not found');
     }
 
+    const record = await this.resolveRecord(content, language);
+
+    return this.toView(record, content);
+  }
+
+  private async resolveRecord(
+    content: ContentWithSource,
+    language: string,
+  ): Promise<ContentEnrichment> {
     const existing = await this.prisma.contentEnrichment.findUnique({
-      where: { contentId_language: { contentId, language } },
+      where: { contentId_language: { contentId: content.id, language } },
     });
 
     // Já há resultado pronto (COMPLETED) ou uma geração em andamento
@@ -68,6 +88,19 @@ export class EnrichmentsService {
 
     // Inexistente, PENDING (fallback do 5A) ou FAILED: gera sob demanda.
     return this.generate(content, existing, language);
+  }
+
+  /** Compõe o registro persistido com os metadados do conteúdo (hero). */
+  private toView(
+    enrichment: ContentEnrichment,
+    content: ContentWithSource,
+  ): EnrichmentView {
+    return {
+      ...enrichment,
+      imageUrl: content.imageUrl,
+      sourceName: content.source.name,
+      publishedAt: content.publishedAt,
+    };
   }
 
   private async generate(
@@ -173,6 +206,8 @@ export class EnrichmentsService {
       const output = await this.aiService.enrichContent({
         title: content.title,
         summary: content.summary,
+        // texto completo da fonte: principal matéria-prima do briefing
+        sourceContent: content.rawSummary,
         url: content.url,
         sourceName: content.source.name,
         language: language as SupportedLanguage,
@@ -185,6 +220,8 @@ export class EnrichmentsService {
           shortSummary: output.shortSummary,
           whyItMatters: output.whyItMatters,
           keyPoints: output.keyPoints,
+          example: output.example,
+          whenToUse: output.whenToUse,
           briefContent: output.briefContent,
           provider: this.aiService.resolveProviderName(),
           model: this.aiService.resolveModelName(),

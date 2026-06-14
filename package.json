@@ -29,6 +29,7 @@
     "prisma:seed": "prisma db seed",
     "ingestion:rss": "ts-node src/modules/ingestion/ingestion.cli.ts",
     "backfill:summary": "ts-node src/modules/contents/backfill-summary.cli.ts",
+    "backfill:image": "ts-node src/modules/contents/backfill-image.cli.ts",
     "prepare": "husky"
   },
   "dependencies": {

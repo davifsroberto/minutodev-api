@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ContentStatus, ContentType, Prisma, Source } from '@prisma/client';
 
 import { summarizeContent } from '../../../common/utils/summarize-content.util';
+import { resolveRssImageUrl } from './rss-image.util';
 import { RssItem } from './rss-parser.service';
 
 /**
@@ -22,6 +23,7 @@ export class RssNormalizerService {
   normalize(
     item: RssItem,
     source: Source,
+    feedImageUrl?: string | null,
   ): Prisma.ContentUncheckedCreateInput | null {
     const url = item.link ?? item.guid;
     if (!url) return null;
@@ -45,6 +47,7 @@ export class RssNormalizerService {
       category: source.category,
       tags: [],
       contentType: ContentType.ARTICLE,
+      imageUrl: resolveRssImageUrl(item, feedImageUrl),
       rawTitle: item.title ?? null,
       rawSummary,
       rawData: this.toJson(item),

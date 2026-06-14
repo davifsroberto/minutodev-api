@@ -64,6 +64,8 @@ const aiOutput: EnrichContentOutput = {
   shortSummary: 'Resumo curto gerado pela IA.',
   whyItMatters: 'Importa porque muda o fluxo de build.',
   keyPoints: ['Ponto 1', 'Ponto 2'],
+  example: 'npm run build caiu de 12s para 7s.',
+  whenToUse: 'Vale a pena em monorepos grandes.',
   briefContent: 'Conteúdo curado e original em pt-BR.',
 };
 
@@ -88,9 +90,10 @@ const createContent = (
   contentType: ContentType.ARTICLE,
   createdAt: new Date('2026-06-14T12:00:00.000Z'),
   id: 'content-1',
+  imageUrl: null,
   publishedAt: new Date('2026-06-14T11:00:00.000Z'),
   rawData: null,
-  rawSummary: null,
+  rawSummary: 'Texto completo original da fonte, com bastante detalhe.',
   rawTitle: null,
   score: 0,
   source: createSource(),
@@ -111,6 +114,7 @@ const createEnrichment = (
   contentId: 'content-1',
   createdAt: new Date('2026-06-14T12:00:00.000Z'),
   errorMessage: null,
+  example: null,
   id: 'enrichment-1',
   keyPoints: [],
   language: DEFAULT_ENRICHMENT_LANGUAGE,
@@ -121,6 +125,7 @@ const createEnrichment = (
   status: EnrichmentStatus.PENDING,
   translatedTitle: 'Título original',
   updatedAt: new Date('2026-06-14T12:00:00.000Z'),
+  whenToUse: null,
   whyItMatters: null,
   ...overrides,
 });
@@ -204,13 +209,35 @@ describe('EnrichmentsService', () => {
       contents.findById.mockResolvedValue(content);
       prisma.contentEnrichment.findUnique.mockResolvedValue(completed);
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        completed,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({
+        id: completed.id,
+        status: EnrichmentStatus.COMPLETED,
+      });
       expect(ai.enrichContent).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.create).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.update).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('composes the hero metadata (imageUrl, sourceName, publishedAt) from the content', async () => {
+      const content = createContent({
+        imageUrl: 'https://cdn.example.test/cover.png',
+        publishedAt: new Date('2026-06-10T08:00:00.000Z'),
+        source: createSource({ name: 'TypeScript Blog' }),
+      });
+      const completed = createEnrichment({
+        status: EnrichmentStatus.COMPLETED,
+      });
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(completed);
+
+      const view = await service.getOrCreateForContent(content.id);
+
+      expect(view.imageUrl).toBe('https://cdn.example.test/cover.png');
+      expect(view.sourceName).toBe('TypeScript Blog');
+      expect(view.publishedAt).toEqual(new Date('2026-06-10T08:00:00.000Z'));
     });
 
     it('returns an in-flight PROCESSING enrichment without triggering a second generation', async () => {
@@ -221,9 +248,12 @@ describe('EnrichmentsService', () => {
       contents.findById.mockResolvedValue(content);
       prisma.contentEnrichment.findUnique.mockResolvedValue(processing);
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        processing,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({
+        id: processing.id,
+        status: EnrichmentStatus.PROCESSING,
+      });
       expect(ai.enrichContent).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.create).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.updateMany).not.toHaveBeenCalled();
@@ -249,9 +279,9 @@ describe('EnrichmentsService', () => {
       prisma.contentEnrichment.create.mockResolvedValue(processing);
       prisma.contentEnrichment.update.mockResolvedValue(completed);
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        completed,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({ id: completed.id });
 
       // 1) cria já em PROCESSING com o fallback derivado do conteúdo
       expect(prisma.contentEnrichment.create).toHaveBeenCalledWith({
@@ -268,16 +298,17 @@ describe('EnrichmentsService', () => {
         },
       });
 
-      // 2) chama a IA pela fachada, com os dados do conteúdo
+      // 2) chama a IA pela fachada, enviando o texto completo da fonte
       expect(ai.enrichContent).toHaveBeenCalledWith({
         title: 'TypeScript 5.7',
         summary: 'Resumo curto.',
+        sourceContent: content.rawSummary,
         url: 'https://example.test/ts-5-7',
         sourceName: 'Compiler News',
         language: DEFAULT_ENRICHMENT_LANGUAGE,
       });
 
-      // 3) persiste o resultado como COMPLETED, com provider/model
+      // 3) persiste o resultado como COMPLETED, com os campos editoriais
       expect(prisma.contentEnrichment.update).toHaveBeenCalledWith({
         where: { id: processing.id },
         data: {
@@ -285,6 +316,8 @@ describe('EnrichmentsService', () => {
           shortSummary: aiOutput.shortSummary,
           whyItMatters: aiOutput.whyItMatters,
           keyPoints: aiOutput.keyPoints,
+          example: aiOutput.example,
+          whenToUse: aiOutput.whenToUse,
           briefContent: aiOutput.briefContent,
           provider: 'gemini',
           model: 'gemini-2.5-flash',
@@ -305,9 +338,9 @@ describe('EnrichmentsService', () => {
       prisma.contentEnrichment.updateMany.mockResolvedValue({ count: 1 });
       prisma.contentEnrichment.update.mockResolvedValue(completed);
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        completed,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({ id: completed.id });
 
       expect(prisma.contentEnrichment.create).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.updateMany).toHaveBeenCalledWith({
@@ -370,7 +403,10 @@ describe('EnrichmentsService', () => {
 
       const result = await service.getOrCreateForContent(content.id);
 
-      expect(result).toBe(failed);
+      expect(result).toMatchObject({
+        id: failed.id,
+        status: EnrichmentStatus.FAILED,
+      });
       expect(prisma.contentEnrichment.update).toHaveBeenCalledWith({
         where: { id: processing.id },
         data: {
@@ -404,9 +440,9 @@ describe('EnrichmentsService', () => {
         }),
       );
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        concurrent,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({ id: concurrent.id });
       expect(ai.enrichContent).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.update).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.findUnique).toHaveBeenCalledTimes(2);
@@ -425,9 +461,9 @@ describe('EnrichmentsService', () => {
         .mockResolvedValueOnce(winner);
       prisma.contentEnrichment.updateMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.getOrCreateForContent(content.id)).resolves.toBe(
-        winner,
-      );
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({ id: winner.id });
       expect(ai.enrichContent).not.toHaveBeenCalled();
       expect(prisma.contentEnrichment.update).not.toHaveBeenCalled();
     });

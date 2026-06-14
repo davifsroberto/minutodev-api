@@ -34,7 +34,8 @@ export class EnrichmentResponseDto {
   whyItMatters!: string | null;
 
   @ApiProperty({
-    description: 'Pontos principais. Vazio enquanto não enriquecido.',
+    description:
+      'Principais aprendizados concretos. Vazio enquanto não enriquecido.',
     example: [],
     isArray: true,
     type: String,
@@ -42,6 +43,24 @@ export class EnrichmentResponseDto {
   keyPoints!: string[];
 
   @ApiProperty({
+    description:
+      'Exemplo concreto citado no artigo (comando, número, caso). Nulo quando não há.',
+    example: 'tsc --noEmit ficou ~20% mais rápido em monorepos.',
+    nullable: true,
+    type: String,
+  })
+  example!: string | null;
+
+  @ApiProperty({
+    description:
+      'Quando vale a pena usar/adotar e trade-offs. Nulo quando o artigo não deixa claro.',
+    nullable: true,
+    type: String,
+  })
+  whenToUse!: string | null;
+
+  @ApiProperty({
+    description: 'Conteúdo detalhado em pt-BR para leitura sem abrir a fonte.',
     example: 'A nova versão do TypeScript traz melhorias no compilador.',
     nullable: true,
     type: String,
@@ -53,6 +72,30 @@ export class EnrichmentResponseDto {
       'https://devblogs.microsoft.com/typescript/announcing-typescript-5-7/',
   })
   originalUrl!: string;
+
+  @ApiProperty({
+    description:
+      'Imagem do artigo (RSS/feed) para o hero. Nula quando indisponível (o front usa um placeholder).',
+    example: 'https://devblogs.microsoft.com/typescript/cover.png',
+    nullable: true,
+    type: String,
+  })
+  imageUrl!: string | null;
+
+  @ApiProperty({
+    description: 'Nome da fonte do conteúdo (para o hero).',
+    example: 'TypeScript Blog',
+  })
+  sourceName!: string;
+
+  @ApiProperty({
+    description: 'Data de publicação do conteúdo original (para o hero).',
+    example: '2026-06-13T09:12:00.000Z',
+    format: 'date-time',
+    nullable: true,
+    type: String,
+  })
+  publishedAt!: Date | null;
 
   @ApiProperty({
     description:

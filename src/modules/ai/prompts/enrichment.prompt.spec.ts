@@ -4,6 +4,7 @@ import {
   buildEnrichmentUserPrompt,
   ENRICHMENT_SYSTEM_PROMPT,
   parseEnrichmentResponse,
+  SOURCE_CONTENT_MAX_CHARS,
 } from './enrichment.prompt';
 
 const baseInput: EnrichContentInput = {
@@ -19,6 +20,8 @@ const validOutput = {
   shortSummary: 'Resumo curto.',
   whyItMatters: 'Importa porque melhora o compilador.',
   keyPoints: ['Ponto 1', 'Ponto 2'],
+  example: 'tsc --noEmit roda 20% mais rápido.',
+  whenToUse: 'Vale a pena em monorepos grandes.',
   briefContent: 'Conteúdo breve e original.',
 };
 
@@ -36,10 +39,18 @@ describe('enrichment.prompt', () => {
         'shortSummary',
         'whyItMatters',
         'keyPoints',
+        'example',
+        'whenToUse',
         'briefContent',
       ]) {
         expect(ENRICHMENT_SYSTEM_PROMPT).toContain(key);
       }
+    });
+
+    it('pede fatos concretos e tradução natural (não literal)', () => {
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/concret/i);
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/não faça tradução literal/i);
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/sem abrir a fonte/i);
     });
   });
 
@@ -63,6 +74,36 @@ describe('enrichment.prompt', () => {
 
       expect(prompt).toContain('(não fornecido)');
       expect(prompt).not.toContain('Fonte:');
+    });
+
+    it('inclui o texto da fonte (sem HTML) quando fornecido', () => {
+      const prompt = buildEnrichmentUserPrompt({
+        ...baseInput,
+        sourceContent: '<p>Detalhes <strong>concretos</strong> do artigo.</p>',
+      });
+
+      expect(prompt).toContain('Texto da fonte');
+      expect(prompt).toContain('Detalhes concretos do artigo.');
+      expect(prompt).not.toContain('<strong>');
+    });
+
+    it('omite o bloco de texto da fonte quando ausente', () => {
+      const prompt = buildEnrichmentUserPrompt({
+        ...baseInput,
+        sourceContent: null,
+      });
+
+      expect(prompt).not.toContain('Texto da fonte');
+    });
+
+    it('trunca o texto da fonte no limite de caracteres', () => {
+      const prompt = buildEnrichmentUserPrompt({
+        ...baseInput,
+        sourceContent: 'x'.repeat(SOURCE_CONTENT_MAX_CHARS + 500),
+      });
+
+      expect(prompt).toContain('…');
+      expect(prompt).not.toContain('x'.repeat(SOURCE_CONTENT_MAX_CHARS + 1));
     });
   });
 
@@ -97,6 +138,32 @@ describe('enrichment.prompt', () => {
       const raw = JSON.stringify({ ...validOutput, extra: 'ignorado' });
 
       expect(parseEnrichmentResponse(raw)).toEqual(validOutput);
+    });
+
+    it('aceita example/whenToUse ausentes, normalizando para null', () => {
+      const raw = JSON.stringify({
+        translatedTitle: 'x',
+        shortSummary: 'y',
+        whyItMatters: 'z',
+        keyPoints: ['k'],
+        briefContent: 'w',
+      });
+
+      const parsed = parseEnrichmentResponse(raw);
+      expect(parsed.example).toBeNull();
+      expect(parsed.whenToUse).toBeNull();
+    });
+
+    it('normaliza example/whenToUse vazios ou "null" para null', () => {
+      const raw = JSON.stringify({
+        ...validOutput,
+        example: '   ',
+        whenToUse: 'null',
+      });
+
+      const parsed = parseEnrichmentResponse(raw);
+      expect(parsed.example).toBeNull();
+      expect(parsed.whenToUse).toBeNull();
     });
 
     it('lança para um JSON inválido', () => {

@@ -110,6 +110,11 @@ modelo `Content` e grava no banco.
   com segurança (não quebram a execução).
 - **Resiliência:** a falha de uma source (ou de um item) é registrada e
   contabilizada, mas não interrompe as demais.
+- **Imagem:** cada item resolve uma `imageUrl` na prioridade imagem do item RSS
+  (`enclosure`/`media:content`/`media:thumbnail`/1ª `<img>` do corpo) → imagem
+  do canal do feed. Sem Open Graph (não fazer scraping); sem imagem, o frontend
+  usa um placeholder. Conteúdos antigos podem ser preenchidos com
+  `npm run backfill:image` (reaplica a regra sobre o `rawData` já salvo).
 
 Execução manual via terminal:
 
@@ -146,10 +151,14 @@ Ao final, é impresso um resumo da execução:
 ## Inteligência Artificial (IA)
 
 O módulo [`ai`](src/modules/ai) fornece uma **camada de IA abstrata** para gerar
-conteúdo enriquecido (tradução/resumo em pt-BR) **sob demanda**. O padrão é
-`mock`, então a aplicação inicia e roda sem nenhuma chave de IA configurada, sem
-custo e sem chamada externa. As regras de negócio dependem apenas da fachada
-`AiService`, nunca de um provedor concreto.
+um **briefing editorial** em pt-BR **sob demanda**. A saída é estruturada (o que
+é, por que importa, principais aprendizados, exemplo citado, quando vale a pena
+usar e conteúdo detalhado), com tradução natural (não literal) e fatos concretos
+— a ideia é entender o conteúdo sem abrir a fonte. O texto completo da fonte
+(`Content.rawSummary`, limitado em tamanho) é enviado ao modelo como matéria-prima.
+O padrão é `mock`, então a aplicação inicia e roda sem nenhuma chave de IA
+configurada, sem custo e sem chamada externa. As regras de negócio dependem
+apenas da fachada `AiService`, nunca de um provedor concreto.
 
 Providers reconhecidos por `LLM_PROVIDER`:
 

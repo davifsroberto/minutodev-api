@@ -27,6 +27,13 @@ export class RssParserService {
       Accept:
         'application/rss+xml, application/xml, text/xml; q=0.9, */*; q=0.8',
     },
+    customFields: {
+      // Mídia não é capturada por padrão; usamos para extrair a imagem do item.
+      item: [
+        ['media:content', 'mediaContent', { keepArray: true }],
+        ['media:thumbnail', 'mediaThumbnail', { keepArray: true }],
+      ],
+    },
   });
 
   parseUrl(url: string): Promise<RssFeed> {

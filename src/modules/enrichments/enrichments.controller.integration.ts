@@ -33,8 +33,13 @@ type EnrichmentResponse = {
   shortSummary: string | null;
   whyItMatters: string | null;
   keyPoints: string[];
+  example: string | null;
+  whenToUse: string | null;
   briefContent: string | null;
   originalUrl: string;
+  imageUrl: string | null;
+  sourceName: string;
+  publishedAt: string | null;
   provider: string | null;
   model: string | null;
   status: string;
@@ -112,6 +117,7 @@ describe('EnrichmentsController integration', () => {
         tags: [],
         contentType: ContentType.RELEASE,
         status: ContentStatus.NEW,
+        imageUrl: `https://example.test/${runId}/cover.png`,
         publishedAt: new Date('2099-09-15T10:00:00.000Z'),
         collectedAt: new Date('2099-09-15T10:00:00.000Z'),
       },
@@ -163,6 +169,9 @@ describe('EnrichmentsController integration', () => {
         // o provedor mock prefixa o título original com [pt-BR]
         translatedTitle: '[pt-BR] TypeScript 5.7 lançado',
         originalUrl: `https://example.test/${runId}/ts-5-7`,
+        // metadados do hero compostos a partir do Content/Source
+        imageUrl: `https://example.test/${runId}/cover.png`,
+        sourceName: `Enrichment Source ${runId}`,
         provider: 'mock',
         model: null,
         status: EnrichmentStatus.COMPLETED,
@@ -172,6 +181,10 @@ describe('EnrichmentsController integration', () => {
     expect(typeof body.id).toBe('string');
     expect(body.whyItMatters).not.toBeNull();
     expect(body.keyPoints.length).toBeGreaterThan(0);
+    // novos campos editoriais (mock os preenche)
+    expect(body.example).not.toBeNull();
+    expect(body.whenToUse).not.toBeNull();
+    expect(body.publishedAt).toBe('2099-09-15T10:00:00.000Z');
 
     const stored = await prisma.contentEnrichment.findMany({
       where: { contentId: summaryContentId },

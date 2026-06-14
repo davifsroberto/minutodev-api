@@ -23,6 +23,8 @@ describe('MockLlmProvider', () => {
     expect(typeof output.shortSummary).toBe('string');
     expect(typeof output.whyItMatters).toBe('string');
     expect(typeof output.briefContent).toBe('string');
+    expect(typeof output.example).toBe('string');
+    expect(typeof output.whenToUse).toBe('string');
     expect(Array.isArray(output.keyPoints)).toBe(true);
     expect(output.keyPoints.every((point) => typeof point === 'string')).toBe(
       true,

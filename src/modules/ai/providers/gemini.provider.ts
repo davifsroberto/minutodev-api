@@ -89,9 +89,10 @@ export class GeminiProvider implements LlmProvider {
           generationConfig: {
             responseMimeType: 'application/json',
             temperature: 0.2,
-            // Folga ampla: os tokens de "thinking" do 2.5-flash também contam
-            // aqui. Se ainda assim truncar, o finishReason é tratado abaixo.
-            maxOutputTokens: 4096,
+            // Briefing editorial é mais longo (várias seções + conteúdo
+            // detalhado) e os tokens de "thinking" do 2.5-flash também contam
+            // aqui. Folga ampla; se ainda truncar, o finishReason é tratado abaixo.
+            maxOutputTokens: 8192,
           },
         }),
         signal: AbortSignal.timeout(timeoutMs),

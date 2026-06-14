@@ -49,9 +49,11 @@ export class IngestionService {
       summary.sourcesProcessed += 1;
 
       let feedItems;
+      let feedImageUrl: string | null = null;
       try {
         const feed = await this.parser.parseUrl(source.url);
         feedItems = feed.items ?? [];
+        feedImageUrl = feed.image?.url ?? null;
       } catch (error) {
         summary.errors += 1;
         this.logger.error(
@@ -64,7 +66,7 @@ export class IngestionService {
 
       for (const item of feedItems) {
         try {
-          const data = this.normalizer.normalize(item, source);
+          const data = this.normalizer.normalize(item, source, feedImageUrl);
 
           if (!data) {
             summary.errors += 1;

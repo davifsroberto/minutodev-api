@@ -31,6 +31,8 @@ export class MockLlmProvider implements LlmProvider {
         `Fonte: ${source}`,
         'Saída de exemplo gerada pelo provedor mock (sem IA real).',
       ],
+      example: `Exemplo de exemplo (mock) relacionado a "${input.title}".`,
+      whenToUse: `Quando você quiser validar o fluxo sem IA real (mock), segundo ${source}.`,
       briefContent:
         summary ??
         `Versão condensada de exemplo (mock) de "${input.title}". Configure um provedor de IA real para gerar o conteúdo definitivo.`,

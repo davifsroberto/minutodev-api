@@ -16,6 +16,8 @@ const validOutput = {
   shortSummary: 'Builds mais rápidas.',
   whyItMatters: 'Reduz o tempo de feedback.',
   keyPoints: ['Mais rápido', 'Compatível'],
+  example: 'Build caiu de 12s para 7s.',
+  whenToUse: 'Vale a pena em projetos grandes.',
   briefContent: 'Resumo breve e original em pt-BR.',
 };
 
