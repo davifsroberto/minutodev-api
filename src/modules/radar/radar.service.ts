@@ -32,17 +32,8 @@ export class RadarService {
   }
 
   async getToday(query: RadarQueryDto): Promise<RadarResponseDto> {
-    const day = this.resolveDay(query.date);
-    const items = await this.contents.findEligibleForDay(
-      day,
-      RADAR_MAX_DAILY_ITEMS,
-    );
-
-    if (items.length === RADAR_MAX_DAILY_ITEMS) {
-      this.logger.warn(
-        `Radar daily item cap hit for ${this.formatDay(day)} (${RADAR_MAX_DAILY_ITEMS} items).`,
-      );
-    }
+    const requestedDay = this.resolveDay(query.date);
+    const { day, items } = await this.resolveBriefing(requestedDay);
 
     const buckets = this.assignSections(items);
     const sections = this.buildSections(buckets, query.limitPerSection);
@@ -56,6 +47,38 @@ export class RadarService {
       estimatedReadTimeMinutes: Math.min(15, totalItems * 2),
       sections,
     };
+  }
+
+  private async resolveBriefing(
+    requestedDay: Date,
+  ): Promise<{ day: Date; items: RadarContent[] }> {
+    const items = await this.fetchEligible(requestedDay);
+    if (items.length > 0) {
+      return { day: requestedDay, items };
+    }
+
+    const fallbackDay =
+      await this.contents.findMostRecentEligibleDay(requestedDay);
+    if (fallbackDay === null) {
+      return { day: requestedDay, items };
+    }
+
+    return { day: fallbackDay, items: await this.fetchEligible(fallbackDay) };
+  }
+
+  private async fetchEligible(day: Date): Promise<RadarContent[]> {
+    const items = await this.contents.findEligibleForDay(
+      day,
+      RADAR_MAX_DAILY_ITEMS,
+    );
+
+    if (items.length === RADAR_MAX_DAILY_ITEMS) {
+      this.logger.warn(
+        `Radar daily item cap hit for ${this.formatDay(day)} (${RADAR_MAX_DAILY_ITEMS} items).`,
+      );
+    }
+
+    return items;
   }
 
   private resolveDay(date?: string): Date {

@@ -406,17 +406,19 @@ describe('RadarController integration', () => {
     expect(body.estimatedReadTimeMinutes).toBe(6);
   });
 
-  it('returns four empty sections and zero read time on a quiet day', async () => {
+  it('falls back to the most recent available briefing when the requested day is empty', async () => {
+    // 2099-09-20 has no content; the most recent eligible day is 2099-09-15,
+    // so the endpoint serves that briefing while reporting its real date.
     const body = await getRadar('?date=2099-09-20');
 
-    expect(body.date).toBe('2099-09-20');
-    expect(body.sections).toEqual([
-      { key: 'releases', items: [] },
-      { key: 'tools', items: [] },
-      { key: 'trends', items: [] },
-      { key: 'recommended', items: [] },
-    ]);
-    expect(body.estimatedReadTimeMinutes).toBe(0);
+    expect(body.date).toBe('2099-09-15');
+    expect(titlesOf(sectionByKey(body, 'releases'))).toContain(
+      'release newest',
+    );
+    expect(allTitles(body).length).toBeGreaterThan(0);
+    expect(body.estimatedReadTimeMinutes).toBeGreaterThan(0);
+    // the requested empty day must not leak into the served briefing's date
+    expect(body.date).not.toBe('2099-09-20');
   });
 
   it.each([

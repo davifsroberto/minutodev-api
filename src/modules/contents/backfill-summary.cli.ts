@@ -47,7 +47,7 @@ async function bootstrap(): Promise<void> {
         take: BATCH_SIZE,
       });
 
-      if (batch.length === 0) break;
+      if (!batch.length) break;
 
       for (const content of batch) {
         scanned += 1;

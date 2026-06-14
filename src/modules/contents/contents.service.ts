@@ -131,6 +131,35 @@ export class ContentsService {
     });
   }
 
+  async findMostRecentEligibleDay(notAfter: Date): Promise<Date | null> {
+    const end = endOfUtcDay(notAfter);
+    const status = { in: [ContentStatus.NEW, ContentStatus.VISIBLE] };
+
+    const [latestPublished, latestCollected] = await Promise.all([
+      this.prisma.content.findFirst({
+        where: { status, publishedAt: { lte: end } },
+        orderBy: { publishedAt: 'desc' },
+        select: { publishedAt: true },
+      }),
+      this.prisma.content.findFirst({
+        where: { status, collectedAt: { lte: end } },
+        orderBy: { collectedAt: 'desc' },
+        select: { collectedAt: true },
+      }),
+    ]);
+
+    const candidates = [
+      latestPublished?.publishedAt,
+      latestCollected?.collectedAt,
+    ].filter((value): value is Date => value != null);
+
+    if (!candidates.length) return null;
+
+    const mostRecent = candidates.reduce((a, b) => (a > b ? a : b));
+
+    return startOfUtcDay(mostRecent);
+  }
+
   create(data: Prisma.ContentCreateInput): Promise<Content> {
     return this.prisma.content.create({ data });
   }

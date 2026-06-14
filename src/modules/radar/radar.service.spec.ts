@@ -13,7 +13,10 @@ import { RadarQueryDto } from './dto/radar-query.dto';
 import { RADAR_MAX_DAILY_ITEMS, RadarService } from './radar.service';
 
 type RadarContent = Content & { source: Source };
-type ContentsServiceMock = Pick<ContentsService, 'findEligibleForDay'>;
+type ContentsServiceMock = Pick<
+  ContentsService,
+  'findEligibleForDay' | 'findMostRecentEligibleDay'
+>;
 
 const createSource = (overrides: Partial<Source> = {}): Source => ({
   category: 'engineering',
@@ -63,13 +66,16 @@ const createQuery = (overrides: Partial<RadarQueryDto> = {}): RadarQueryDto =>
 describe('RadarService', () => {
   let contents: {
     findEligibleForDay: jest.Mock<Promise<RadarContent[]>, [Date, number]>;
+    findMostRecentEligibleDay: jest.Mock<Promise<Date | null>, [Date]>;
   };
   let service: RadarService;
 
   beforeEach(() => {
     contents = {
       findEligibleForDay: jest.fn<Promise<RadarContent[]>, [Date, number]>(),
+      findMostRecentEligibleDay: jest.fn<Promise<Date | null>, [Date]>(),
     };
+    contents.findMostRecentEligibleDay.mockResolvedValue(null);
     service = new RadarService(
       contents as ContentsServiceMock as ContentsService,
     );
@@ -256,6 +262,64 @@ describe('RadarService', () => {
       new Date('2026-06-13T00:00:00.000Z'),
       RADAR_MAX_DAILY_ITEMS,
     );
+  });
+
+  describe('most-recent fallback when the requested day is empty', () => {
+    it('serves the most recent available day and reports its real date', async () => {
+      const fallbackDay = new Date('2026-06-10T00:00:00.000Z');
+      contents.findEligibleForDay
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          createContent({ category: 'ai', id: 'past-trend' }),
+        ]);
+      contents.findMostRecentEligibleDay.mockResolvedValue(fallbackDay);
+
+      const response = await service.getToday(
+        createQuery({ date: '2026-06-13' }),
+      );
+
+      expect(contents.findMostRecentEligibleDay).toHaveBeenCalledWith(
+        new Date('2026-06-13T00:00:00.000Z'),
+      );
+      expect(contents.findEligibleForDay).toHaveBeenNthCalledWith(
+        2,
+        fallbackDay,
+        RADAR_MAX_DAILY_ITEMS,
+      );
+      expect(response.date).toBe('2026-06-10');
+      expect(
+        response.sections.find((section) => section.key === 'trends')?.items,
+      ).toEqual([expect.objectContaining({ id: 'past-trend' })]);
+    });
+
+    it('keeps the empty requested day when no earlier content exists', async () => {
+      contents.findEligibleForDay.mockResolvedValue([]);
+      contents.findMostRecentEligibleDay.mockResolvedValue(null);
+
+      const response = await service.getToday(
+        createQuery({ date: '2026-06-13' }),
+      );
+
+      expect(contents.findEligibleForDay).toHaveBeenCalledTimes(1);
+      expect(response.date).toBe('2026-06-13');
+      expect(response.estimatedReadTimeMinutes).toBe(0);
+      expect(response.sections.every((section) => !section.items.length)).toBe(
+        true,
+      );
+    });
+
+    it('does not look for a fallback when the requested day has content', async () => {
+      contents.findEligibleForDay.mockResolvedValue([
+        createContent({ category: 'ai', id: 'today-trend' }),
+      ]);
+
+      const response = await service.getToday(
+        createQuery({ date: '2026-06-13' }),
+      );
+
+      expect(contents.findMostRecentEligibleDay).not.toHaveBeenCalled();
+      expect(response.date).toBe('2026-06-13');
+    });
   });
 
   it('logs a warning when the daily defensive cap is hit', async () => {

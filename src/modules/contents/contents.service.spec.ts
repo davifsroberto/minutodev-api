@@ -18,6 +18,10 @@ type ContentDelegateMock = {
   count: jest.Mock<unknown, [Prisma.ContentCountArgs]>;
   create: jest.Mock<Promise<Content>, [Prisma.ContentCreateArgs]>;
   findMany: jest.Mock<unknown, [Prisma.ContentFindManyArgs]>;
+  findFirst: jest.Mock<
+    Promise<Partial<Pick<Content, 'publishedAt' | 'collectedAt'>> | null>,
+    [Prisma.ContentFindFirstArgs]
+  >;
   findUnique: jest.Mock<
     Promise<(Content & { source: Source }) | null>,
     [Prisma.ContentFindUniqueArgs]
@@ -74,6 +78,10 @@ const createPrismaMock = (): PrismaServiceMock => ({
     count: jest.fn<unknown, [Prisma.ContentCountArgs]>(),
     create: jest.fn<Promise<Content>, [Prisma.ContentCreateArgs]>(),
     findMany: jest.fn<unknown, [Prisma.ContentFindManyArgs]>(),
+    findFirst: jest.fn<
+      Promise<Partial<Pick<Content, 'publishedAt' | 'collectedAt'>> | null>,
+      [Prisma.ContentFindFirstArgs]
+    >(),
     findUnique: jest.fn<
       Promise<(Content & { source: Source }) | null>,
       [Prisma.ContentFindUniqueArgs]
@@ -276,6 +284,59 @@ describe('ContentsService', () => {
         orderBy,
         take: 500,
       });
+    });
+  });
+
+  describe('findMostRecentEligibleDay', () => {
+    const eligibleStatus = {
+      in: [ContentStatus.NEW, ContentStatus.VISIBLE],
+    };
+    const end = new Date('2026-06-13T23:59:59.999Z');
+
+    it('returns the start of the most recent eligible UTC day across both timestamps', async () => {
+      prisma.content.findFirst
+        .mockResolvedValueOnce({
+          publishedAt: new Date('2026-06-10T08:00:00.000Z'),
+        })
+        .mockResolvedValueOnce({
+          collectedAt: new Date('2026-06-11T20:00:00.000Z'),
+        });
+
+      await expect(
+        service.findMostRecentEligibleDay(new Date('2026-06-13T14:30:00.000Z')),
+      ).resolves.toEqual(new Date('2026-06-11T00:00:00.000Z'));
+
+      const calls = prisma.content.findFirst.mock.calls;
+      expect(calls[0][0]).toEqual({
+        where: { status: eligibleStatus, publishedAt: { lte: end } },
+        orderBy: { publishedAt: 'desc' },
+        select: { publishedAt: true },
+      });
+      expect(calls[1][0]).toEqual({
+        where: { status: eligibleStatus, collectedAt: { lte: end } },
+        orderBy: { collectedAt: 'desc' },
+        select: { collectedAt: true },
+      });
+    });
+
+    it('uses the only available timestamp when one query is empty', async () => {
+      prisma.content.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          collectedAt: new Date('2026-06-09T09:00:00.000Z'),
+        });
+
+      await expect(
+        service.findMostRecentEligibleDay(new Date('2026-06-13T00:00:00.000Z')),
+      ).resolves.toEqual(new Date('2026-06-09T00:00:00.000Z'));
+    });
+
+    it('returns null when no eligible content exists on or before the day', async () => {
+      prisma.content.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findMostRecentEligibleDay(new Date('2026-06-13T00:00:00.000Z')),
+      ).resolves.toBeNull();
     });
   });
 
