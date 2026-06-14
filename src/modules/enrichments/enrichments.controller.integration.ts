@@ -20,6 +20,11 @@ import { configureBootstrapGlobals } from '../../bootstrap';
 
 expand(loadEnv());
 
+// Testes de integração usam o provedor mock: determinístico, offline e sem
+// custo, independentemente do LLM_PROVIDER/LLM_MODEL do .env local.
+process.env.LLM_PROVIDER = 'mock';
+delete process.env.LLM_MODEL;
+
 type EnrichmentResponse = {
   id: string;
   contentId: string;
@@ -148,26 +153,25 @@ describe('EnrichmentsController integration', () => {
     return response.body as EnrichmentResponse;
   };
 
-  it('initializes a PENDING enrichment with a content-based fallback on first access', async () => {
+  it('generates a COMPLETED enrichment via the configured provider on first access', async () => {
     const body = await getEnrichment(summaryContentId);
 
     expect(body).toEqual(
       expect.objectContaining({
         contentId: summaryContentId,
         language: 'pt-BR',
-        translatedTitle: 'TypeScript 5.7 lançado',
-        shortSummary: 'A nova versão traz melhorias no compilador.',
-        whyItMatters: null,
-        keyPoints: [],
-        briefContent: 'A nova versão traz melhorias no compilador.',
+        // o provedor mock prefixa o título original com [pt-BR]
+        translatedTitle: '[pt-BR] TypeScript 5.7 lançado',
         originalUrl: `https://example.test/${runId}/ts-5-7`,
-        provider: null,
+        provider: 'mock',
         model: null,
-        status: EnrichmentStatus.PENDING,
+        status: EnrichmentStatus.COMPLETED,
         errorMessage: null,
       }),
     );
     expect(typeof body.id).toBe('string');
+    expect(body.whyItMatters).not.toBeNull();
+    expect(body.keyPoints.length).toBeGreaterThan(0);
 
     const stored = await prisma.contentEnrichment.findMany({
       where: { contentId: summaryContentId },
@@ -176,11 +180,14 @@ describe('EnrichmentsController integration', () => {
     expect(stored[0].id).toBe(body.id);
   });
 
-  it('returns the same persisted enrichment on repeat access without duplicating', async () => {
+  it('serves the persisted enrichment from the DB on repeat access, without regenerating', async () => {
     const first = await getEnrichment(summaryContentId);
     const second = await getEnrichment(summaryContentId);
 
     expect(second.id).toBe(first.id);
+    expect(second.status).toBe(EnrichmentStatus.COMPLETED);
+    // sem regeneração: o registro não é tocado de novo (updatedAt estável)
+    expect(second.updatedAt).toBe(first.updatedAt);
 
     const stored = await prisma.contentEnrichment.findMany({
       where: { contentId: summaryContentId },
@@ -188,13 +195,14 @@ describe('EnrichmentsController integration', () => {
     expect(stored).toHaveLength(1);
   });
 
-  it('carries a null content summary into the fallback summary fields', async () => {
+  it('completes generation even when the content has no summary', async () => {
     const body = await getEnrichment(nullSummaryContentId);
 
-    expect(body.translatedTitle).toBe('Conteúdo sem resumo');
-    expect(body.shortSummary).toBeNull();
-    expect(body.briefContent).toBeNull();
-    expect(body.status).toBe(EnrichmentStatus.PENDING);
+    expect(body.translatedTitle).toBe('[pt-BR] Conteúdo sem resumo');
+    expect(body.status).toBe(EnrichmentStatus.COMPLETED);
+    // sem resumo de origem, o mock gera um texto de exemplo (não nulo)
+    expect(body.shortSummary).not.toBeNull();
+    expect(body.briefContent).not.toBeNull();
   });
 
   it('returns a 404 envelope for an unknown content id without persisting anything', async () => {

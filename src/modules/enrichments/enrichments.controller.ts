@@ -36,11 +36,11 @@ export class EnrichmentsController {
 
   @Get(':id/enrichment')
   @ApiOperation({
-    summary: 'Get (or initialize) the pt-BR enrichment of a content item',
+    summary: 'Get (or generate on demand) the pt-BR enrichment of a content',
   })
   @ApiOkResponse({
     description:
-      'pt-BR enrichment for the content. When absent it is created as PENDING with a content-based fallback (no AI).',
+      'pt-BR enrichment. When no COMPLETED enrichment exists, it is generated on demand via the configured AI provider and persisted as COMPLETED. A concurrent generation in progress returns PROCESSING; an AI failure returns the record as FAILED with a friendly errorMessage and the content-based fallback still populated.',
     type: EnrichmentResponseDto,
   })
   @ApiNotFoundResponse({

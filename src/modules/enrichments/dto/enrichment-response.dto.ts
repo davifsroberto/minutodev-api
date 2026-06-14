@@ -27,15 +27,14 @@ export class EnrichmentResponseDto {
   shortSummary!: string | null;
 
   @ApiProperty({
-    description:
-      'Por que o conteúdo importa. Nulo até o enriquecimento por IA.',
+    description: 'Por que o conteúdo importa. Nulo enquanto não enriquecido.',
     nullable: true,
     type: String,
   })
   whyItMatters!: string | null;
 
   @ApiProperty({
-    description: 'Pontos principais. Vazio até o enriquecimento por IA.',
+    description: 'Pontos principais. Vazio enquanto não enriquecido.',
     example: [],
     isArray: true,
     type: String,
@@ -56,14 +55,16 @@ export class EnrichmentResponseDto {
   originalUrl!: string;
 
   @ApiProperty({
-    description: 'Provedor de IA do enriquecimento. Nulo nesta fase.',
+    description:
+      'Provedor de IA que gerou o enriquecimento (ex.: mock, gemini). Nulo antes da geração.',
     nullable: true,
     type: String,
   })
   provider!: string | null;
 
   @ApiProperty({
-    description: 'Modelo de IA do enriquecimento. Nulo nesta fase.',
+    description:
+      'Modelo de IA solicitado (LLM_MODEL) na geração. Nulo quando não configurado ou antes da geração.',
     nullable: true,
     type: String,
   })
@@ -72,12 +73,15 @@ export class EnrichmentResponseDto {
   @ApiProperty({
     enum: EnrichmentStatus,
     enumName: 'EnrichmentStatus',
-    example: EnrichmentStatus.PENDING,
+    description:
+      'COMPLETED quando a IA gerou o conteúdo; PROCESSING durante a geração; FAILED quando a IA falhou (com fallback e errorMessage).',
+    example: EnrichmentStatus.COMPLETED,
   })
   status!: EnrichmentStatus;
 
   @ApiProperty({
-    description: 'Mensagem de erro do enriquecimento. Nulo nesta fase.',
+    description:
+      'Mensagem amigável quando status=FAILED; nulo nos demais estados.',
     nullable: true,
     type: String,
   })

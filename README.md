@@ -173,6 +173,15 @@ seu `.env`. O modelo é controlado por `LLM_MODEL` (vazio usa `gemini-2.5-flash`
 `https://generativelanguage.googleapis.com/v1beta`). A geração continua sob
 demanda: nada é chamado automaticamente.
 
+O enriquecimento por IA é gerado **sob demanda** em `GET /contents/:id/enrichment`:
+se já existe um registro `COMPLETED`, ele é servido do banco (sem IA); caso
+contrário, o registro vai para `PROCESSING`, o `AiService` é chamado e o
+resultado é persistido como `COMPLETED`. Uma requisição concorrente que pegue o
+registro em `PROCESSING` **não** dispara uma segunda geração. Em caso de falha da
+IA, o registro vira `FAILED` com uma `errorMessage` amigável (sem secrets) e o
+fallback derivado do próprio conteúdo (título/resumo originais) permanece
+visível — a resposta segue `200`, para o leitor sempre ter a fonte original.
+
 Falhas de configuração têm dois momentos distintos:
 
 - Valor inválido de `LLM_PROVIDER`, como `depseek` ou `openai`, falha no boot com
@@ -189,10 +198,12 @@ inclui `não implementado — as chamadas falharão`.
 > `DEEPSEEK_TIMEOUT_MS` → `LLM_TIMEOUT_MS`. Os nomes antigos não são mais lidos;
 > atualize qualquer `.env` local.
 
-> **Controle de custo:** nesta fase a IA é apenas infraestrutura. Não há job em
-> lote, fila ou cron; a ingestão RSS e o `GET /radar/today` **não** chamam IA. A
-> geração real é sempre sob demanda; nenhuma chamada e nenhum custo ocorrem sem
-> ação explícita.
+> **Controle de custo:** a única porta de entrada de IA é o enriquecimento sob
+> demanda (`GET /contents/:id/enrichment`), disparado ao abrir um conteúdo e
+> apenas quando ainda não existe um enriquecimento `COMPLETED` — a segunda
+> abertura serve do banco, sem nova chamada. Não há job em lote, fila ou cron; a
+> ingestão RSS e o `GET /radar/today` **não** chamam IA. Nenhuma chamada e nenhum
+> custo ocorrem sem ação explícita do usuário.
 
 ### Variáveis de ambiente
 

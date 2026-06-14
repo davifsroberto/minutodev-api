@@ -8,6 +8,14 @@ import {
   EnrichContentOutput,
 } from './providers/llm-provider.interface';
 
+// Contrato público da camada de IA. Módulos de negócio dependem destes tipos
+// pela fachada (AiService), nunca importando de `./providers/*` diretamente.
+export type {
+  EnrichContentInput,
+  EnrichContentOutput,
+  SupportedLanguage,
+} from './providers/llm-provider.interface';
+
 /**
  * Orquestra o enriquecimento de conteúdo sobre o provedor de IA selecionado por
  * `LLM_PROVIDER` (padrão: mock). Não conhece Prisma nem banco — apenas escolhe o
@@ -32,6 +40,15 @@ export class AiService implements OnModuleInit {
 
   enrichContent(input: EnrichContentInput): Promise<EnrichContentOutput> {
     return this.registry[this.resolveProviderName()].enrichContent(input);
+  }
+
+  /**
+   * Modelo configurado via `LLM_MODEL` (override global), ou `null` quando não
+   * definido — nesse caso cada provedor usa seu modelo padrão. Serve para
+   * registrar no enriquecimento qual modelo foi solicitado; nunca expõe chaves.
+   */
+  resolveModelName(): string | null {
+    return process.env.LLM_MODEL?.trim() || null;
   }
 
   resolveProviderName(): LlmProviderName {

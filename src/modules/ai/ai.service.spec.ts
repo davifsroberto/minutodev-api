@@ -108,6 +108,23 @@ describe('AiService', () => {
     });
   });
 
+  describe('resolveModelName', () => {
+    it('retorna o LLM_MODEL configurado (trim)', () => {
+      process.env.LLM_MODEL = '  gemini-2.5-flash  ';
+      expect(service.resolveModelName()).toBe('gemini-2.5-flash');
+    });
+
+    it('retorna null quando LLM_MODEL não está definido', () => {
+      delete process.env.LLM_MODEL;
+      expect(service.resolveModelName()).toBeNull();
+    });
+
+    it('retorna null quando LLM_MODEL está vazio ou só com espaços', () => {
+      process.env.LLM_MODEL = '   ';
+      expect(service.resolveModelName()).toBeNull();
+    });
+  });
+
   describe('enrichContent', () => {
     it('delega ao provedor mock por padrão', async () => {
       delete process.env.LLM_PROVIDER;
