@@ -111,10 +111,24 @@ modelo `Content` e grava no banco.
 - **Resiliência:** a falha de uma source (ou de um item) é registrada e
   contabilizada, mas não interrompe as demais.
 - **Imagem:** cada item resolve uma `imageUrl` na prioridade imagem do item RSS
-  (`enclosure`/`media:content`/`media:thumbnail`/1ª `<img>` do corpo) → imagem
-  do canal do feed. Sem Open Graph (não fazer scraping); sem imagem, o frontend
-  usa um placeholder. Conteúdos antigos podem ser preenchidos com
-  `npm run backfill:image` (reaplica a regra sobre o `rawData` já salvo).
+  (`enclosure`/`media:content`/`media:thumbnail`/1ª `<img>` do corpo) →
+  **og:image/twitter:image** da página original → imagem do canal do feed. Sem
+  imagem, o frontend gera uma capa branded por fonte. Conteúdos antigos podem ser
+  preenchidos com `npm run backfill:image` (reaplica a regra do RSS sobre o
+  `rawData`, offline) e `npm run backfill:og-image` (busca o og:image, com rede).
+
+### Fallback de imagem via og:image
+
+Quando o RSS não traz imagem (ex.: Hacker News, OpenAI), o
+[`OpenGraphImageService`](src/modules/images/open-graph.service.ts) busca o
+`og:image`/`twitter:image` da página do artigo. É **sob demanda** — roda dentro
+da geração do enrichment (em paralelo com a IA), **nunca na ingestão** — e
+**best-effort**: qualquer falha vira `null` e cai no próximo fallback, sem
+derrubar a geração. Defesas: só `http(s)` para hosts públicos, bloqueio de
+IPs privados/reservados (anti-SSRF, com checagem de DNS e revalidação de cada
+redirect), timeout curto, teto de bytes e cache em memória. Pode ser desligado
+com `OG_IMAGE_ENABLED=false`. Fontes com anti-bot/paywall (ex.: 403) seguem na
+capa branded.
 
 Execução manual via terminal:
 

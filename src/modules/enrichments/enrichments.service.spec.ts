@@ -19,6 +19,7 @@ import {
   EnrichContentOutput,
 } from '../ai/ai.service';
 import { ContentsService } from '../contents/contents.service';
+import { OpenGraphImageService } from '../images/open-graph.service';
 import {
   DEFAULT_ENRICHMENT_LANGUAGE,
   EnrichmentsService,
@@ -45,12 +46,21 @@ type ContentEnrichmentDelegateMock = {
   >;
 };
 
+type ContentDelegateMock = {
+  update: jest.Mock<Promise<Content>, [Prisma.ContentUpdateArgs]>;
+};
+
 type PrismaServiceMock = {
   contentEnrichment: ContentEnrichmentDelegateMock;
+  content: ContentDelegateMock;
 };
 
 type ContentsServiceMock = {
   findById: jest.Mock<Promise<ContentWithSource | null>, [string]>;
+};
+
+type OpenGraphImageServiceMock = {
+  resolveImageUrl: jest.Mock<Promise<string | null>, [string]>;
 };
 
 type AiServiceMock = {
@@ -157,6 +167,9 @@ const createPrismaMock = (): PrismaServiceMock => ({
       [Prisma.ContentEnrichmentUpdateManyArgs]
     >(),
   },
+  content: {
+    update: jest.fn<Promise<Content>, [Prisma.ContentUpdateArgs]>(),
+  },
 });
 
 describe('EnrichmentsService', () => {
@@ -164,6 +177,7 @@ describe('EnrichmentsService', () => {
   let prisma: PrismaServiceMock;
   let contents: ContentsServiceMock;
   let ai: AiServiceMock;
+  let openGraph: OpenGraphImageServiceMock;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -179,6 +193,12 @@ describe('EnrichmentsService', () => {
         .fn<string | null, []>()
         .mockReturnValue('gemini-2.5-flash'),
     };
+    openGraph = {
+      // por padrão sem imagem: a maioria dos testes não exercita o og:image
+      resolveImageUrl: jest
+        .fn<Promise<string | null>, [string]>()
+        .mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -186,6 +206,7 @@ describe('EnrichmentsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: ContentsService, useValue: contents },
         { provide: AiService, useValue: ai },
+        { provide: OpenGraphImageService, useValue: openGraph },
       ],
     }).compile();
 
@@ -542,6 +563,84 @@ describe('EnrichmentsService', () => {
       expect(ai.enrichContent).toHaveBeenCalledWith(
         expect.objectContaining({ language: 'en' }),
       );
+    });
+  });
+
+  describe('resolução de imagem (og:image)', () => {
+    const setupGeneration = (content: ContentWithSource): void => {
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(null);
+      prisma.contentEnrichment.create.mockResolvedValue(
+        createEnrichment({ status: EnrichmentStatus.PROCESSING }),
+      );
+      prisma.contentEnrichment.update.mockResolvedValue(
+        createEnrichment({ status: EnrichmentStatus.COMPLETED }),
+      );
+    };
+
+    it('resolve a og:image quando o conteúdo não tem imagem e persiste em Content', async () => {
+      const content = createContent({ imageUrl: null });
+      setupGeneration(content);
+      openGraph.resolveImageUrl.mockResolvedValue('https://og.test/capa.jpg');
+
+      const view = await service.getOrCreateForContent(content.id);
+
+      expect(openGraph.resolveImageUrl).toHaveBeenCalledWith(content.url);
+      expect(prisma.content.update).toHaveBeenCalledWith({
+        where: { id: content.id },
+        data: { imageUrl: 'https://og.test/capa.jpg' },
+      });
+      // a view composta já reflete a imagem nova na primeira abertura
+      expect(view.imageUrl).toBe('https://og.test/capa.jpg');
+    });
+
+    it('não busca og:image quando o conteúdo já tem imagem do RSS', async () => {
+      const content = createContent({
+        imageUrl: 'https://cdn.test/rss.jpg',
+      });
+      setupGeneration(content);
+
+      const view = await service.getOrCreateForContent(content.id);
+
+      expect(openGraph.resolveImageUrl).not.toHaveBeenCalled();
+      expect(prisma.content.update).not.toHaveBeenCalled();
+      expect(view.imageUrl).toBe('https://cdn.test/rss.jpg');
+    });
+
+    it('conclui a geração mesmo se a resolução de imagem falhar', async () => {
+      const content = createContent({ imageUrl: null });
+      setupGeneration(content);
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      openGraph.resolveImageUrl.mockRejectedValue(new Error('rede caiu'));
+
+      const result = await service.getOrCreateForContent(content.id);
+
+      expect(result.status).toBe(EnrichmentStatus.COMPLETED);
+      expect(prisma.content.update).not.toHaveBeenCalled();
+    });
+
+    it('aplica a og:image mesmo quando a IA falha (estado FAILED)', async () => {
+      const content = createContent({ imageUrl: null });
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(null);
+      prisma.contentEnrichment.create.mockResolvedValue(
+        createEnrichment({ status: EnrichmentStatus.PROCESSING }),
+      );
+      prisma.contentEnrichment.update.mockResolvedValue(
+        createEnrichment({ status: EnrichmentStatus.FAILED }),
+      );
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      ai.enrichContent.mockRejectedValue(new Error('IA fora do ar'));
+      openGraph.resolveImageUrl.mockResolvedValue('https://og.test/capa.jpg');
+
+      const result = await service.getOrCreateForContent(content.id);
+
+      // a imagem independe da IA: é persistida mesmo no caminho FAILED
+      expect(result.status).toBe(EnrichmentStatus.FAILED);
+      expect(prisma.content.update).toHaveBeenCalledWith({
+        where: { id: content.id },
+        data: { imageUrl: 'https://og.test/capa.jpg' },
+      });
     });
   });
 });

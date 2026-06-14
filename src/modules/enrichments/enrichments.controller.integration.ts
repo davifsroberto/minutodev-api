@@ -24,6 +24,8 @@ expand(loadEnv());
 // custo, independentemente do LLM_PROVIDER/LLM_MODEL do .env local.
 process.env.LLM_PROVIDER = 'mock';
 delete process.env.LLM_MODEL;
+// Desliga a busca de og:image: o teste é offline e não deve bater na rede.
+process.env.OG_IMAGE_ENABLED = 'false';
 
 type EnrichmentResponse = {
   id: string;

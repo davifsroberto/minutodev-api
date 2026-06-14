@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { AiService, SupportedLanguage } from '../ai/ai.service';
 import { ContentsService } from '../contents/contents.service';
+import { OpenGraphImageService } from '../images/open-graph.service';
 
 export const DEFAULT_ENRICHMENT_LANGUAGE = 'pt-BR';
 
@@ -50,6 +51,7 @@ export class EnrichmentsService {
     private readonly prisma: PrismaService,
     private readonly contentsService: ContentsService,
     private readonly aiService: AiService,
+    private readonly openGraph: OpenGraphImageService,
   ) {}
 
   async getOrCreateForContent(
@@ -202,6 +204,10 @@ export class EnrichmentsService {
     content: ContentWithSource,
     language: string,
   ): Promise<ContentEnrichment> {
+    // Resolve a imagem (og:image) em paralelo com a IA: é independente do texto
+    // e nunca lança, então aplicamos o que vier mesmo se a IA falhar.
+    const imagePending = this.resolveMissingImage(content);
+
     try {
       const output = await this.aiService.enrichContent({
         title: content.title,
@@ -212,6 +218,8 @@ export class EnrichmentsService {
         sourceName: content.source.name,
         language: language as SupportedLanguage,
       });
+
+      await imagePending;
 
       return await this.prisma.contentEnrichment.update({
         where: { id: enrichment.id },
@@ -241,6 +249,9 @@ export class EnrichmentsService {
         `Falha ao enriquecer o conteúdo ${content.id}: ${this.describeError(error)}`,
       );
 
+      // A imagem independe da IA: ainda vale aplicá-la mesmo no estado FAILED.
+      await imagePending;
+
       return this.prisma.contentEnrichment.update({
         where: { id: enrichment.id },
         data: {
@@ -248,6 +259,32 @@ export class EnrichmentsService {
           errorMessage: GENERATION_FAILURE_MESSAGE,
         },
       });
+    }
+  }
+
+  /**
+   * Preenche `Content.imageUrl` via og:image quando o RSS não trouxe imagem
+   * (a ordem aprovada: imagem do RSS → og:image → imagem do feed → capa branded).
+   * Best-effort: qualquer falha é engolida para não derrubar a geração. Muta o
+   * `content` em memória para que a view composta já reflita a imagem nova na
+   * primeira abertura.
+   */
+  private async resolveMissingImage(content: ContentWithSource): Promise<void> {
+    if (content.imageUrl) return;
+
+    try {
+      const imageUrl = await this.openGraph.resolveImageUrl(content.url);
+      if (!imageUrl) return;
+
+      await this.prisma.content.update({
+        where: { id: content.id },
+        data: { imageUrl },
+      });
+      content.imageUrl = imageUrl;
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao aplicar og:image ao conteúdo ${content.id}: ${this.describeError(error)}`,
+      );
     }
   }
 
