@@ -157,7 +157,7 @@ Providers reconhecidos por `LLM_PROVIDER`:
 | --- | --- | --- |
 | `mock` | Implementado | Padrão; não chama API externa e retorna saída determinística. |
 | `deepseek` | Implementado | Usa `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `LLM_MODEL` e `LLM_TIMEOUT_MS`. |
-| `gemini` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
+| `gemini` | Implementado | Usa `GEMINI_API_KEY`, `GEMINI_BASE_URL`, `LLM_MODEL` (padrão `gemini-2.5-flash`) e `LLM_TIMEOUT_MS`. |
 | `openrouter` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
 | `ollama` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
 
@@ -167,22 +167,23 @@ Para ativar o DeepSeek, defina `LLM_PROVIDER=deepseek` e
 do provider (`deepseek-chat` para `deepseek`); `LLM_TIMEOUT_MS` é opcional e usa
 `30000`.
 
-Para uma futura ativação do Gemini, a configuração esperada será
-`LLM_PROVIDER=gemini`, `GEMINI_API_KEY` e, se necessário, `GEMINI_BASE_URL`.
-Hoje esse provider é apenas placeholder: a aplicação inicia, mas a primeira
-chamada de IA falha com `LLM provider "gemini" is not implemented yet.`.
+Para ativar o Gemini (Google), defina `LLM_PROVIDER=gemini` e `GEMINI_API_KEY` no
+seu `.env`. O modelo é controlado por `LLM_MODEL` (vazio usa `gemini-2.5-flash`);
+`GEMINI_BASE_URL` é opcional (padrão: a API pública do Google,
+`https://generativelanguage.googleapis.com/v1beta`). A geração continua sob
+demanda: nada é chamado automaticamente.
 
 Falhas de configuração têm dois momentos distintos:
 
 - Valor inválido de `LLM_PROVIDER`, como `depseek` ou `openai`, falha no boot com
   `Invalid LLM provider "<valor>". Accepted providers: mock, deepseek, gemini, openrouter, ollama.`.
-- Valor reconhecido, mas ainda placeholder (`gemini`, `openrouter`, `ollama`),
-  permite o boot. A chamada de IA falha sob demanda com `LLM provider "<provider>" is not implemented yet.`.
+- Valor reconhecido, mas ainda placeholder (`openrouter`, `ollama`), permite o
+  boot. A chamada de IA falha sob demanda com `LLM provider "<provider>" is not implemented yet.`.
 
-O log de startup sempre informa o provider ativo. Para `deepseek` sem chave, ele
-inclui o aviso `sem DEEPSEEK_API_KEY — as chamadas falharão até a chave ser
-configurada`; para placeholders, inclui `não implementado — as chamadas
-falharão`.
+O log de startup sempre informa o provider ativo. Para `deepseek`/`gemini` sem
+chave, ele inclui o aviso `sem DEEPSEEK_API_KEY`/`sem GEMINI_API_KEY — as chamadas
+falharão até a chave ser configurada`; para placeholders (`openrouter`, `ollama`),
+inclui `não implementado — as chamadas falharão`.
 
 > **Aviso de ruptura:** `DEEPSEEK_MODEL` → `LLM_MODEL` e
 > `DEEPSEEK_TIMEOUT_MS` → `LLM_TIMEOUT_MS`. Os nomes antigos não são mais lidos;
@@ -202,8 +203,8 @@ falharão`.
 | `LLM_TIMEOUT_MS` | `30000` | Tempo limite genérico das chamadas de LLM, em ms. Opcional. |
 | `DEEPSEEK_API_KEY` | _(vazio)_ | Chave da API DeepSeek. **Nunca** commite nem logue. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base da API DeepSeek. |
-| `GEMINI_API_KEY` | _(vazio)_ | Placeholder para a futura chave Gemini; ainda não implementado. |
-| `GEMINI_BASE_URL` | _(vazio)_ | Placeholder para a futura base Gemini; ainda não implementado. |
+| `GEMINI_API_KEY` | _(vazio)_ | Chave da API Gemini (Google). **Nunca** commite nem logue. |
+| `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Base da API Gemini. Opcional. |
 | `OPENROUTER_API_KEY` | _(vazio)_ | Placeholder para a futura chave OpenRouter; ainda não implementado. |
 | `OLLAMA_BASE_URL` | _(vazio)_ | Placeholder para a futura base Ollama; ainda não implementado. |
 

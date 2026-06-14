@@ -54,24 +54,28 @@ export class AiService implements OnModuleInit {
   }
 
   private resolveStartupNotice(name: LlmProviderName): string {
-    if (name === 'deepseek' && !this.isDeepseekConfigured()) {
+    if (name === 'deepseek' && !this.isConfigured(name)) {
       return ' (sem DEEPSEEK_API_KEY — as chamadas falharão até a chave ser configurada)';
     }
 
-    if (name === 'gemini' || name === 'openrouter' || name === 'ollama') {
+    if (name === 'gemini' && !this.isConfigured(name)) {
+      return ' (sem GEMINI_API_KEY — as chamadas falharão até a chave ser configurada)';
+    }
+
+    if (name === 'openrouter' || name === 'ollama') {
       return ' (não implementado — as chamadas falharão)';
     }
 
     return '';
   }
 
-  private isDeepseekConfigured(): boolean {
-    const provider = this.registry.deepseek;
+  private isConfigured(name: LlmProviderName): boolean {
+    const provider = this.registry[name];
 
     return (
       'isConfigured' in provider &&
       typeof provider.isConfigured === 'function' &&
-      provider.isConfigured()
+      provider.isConfigured() === true
     );
   }
 }

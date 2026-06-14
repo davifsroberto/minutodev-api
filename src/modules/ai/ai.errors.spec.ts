@@ -35,9 +35,9 @@ describe('ai errors', () => {
   });
 
   describe('NotImplementedProviderError', () => {
-    it('nomeia o provedor gemini', () => {
-      expect(new NotImplementedProviderError('gemini').message).toContain(
-        'gemini',
+    it('nomeia o provedor openrouter', () => {
+      expect(new NotImplementedProviderError('openrouter').message).toContain(
+        'openrouter',
       );
     });
 
@@ -48,7 +48,7 @@ describe('ai errors', () => {
     });
 
     it('define nome estável e estende Error', () => {
-      const error = new NotImplementedProviderError('gemini');
+      const error = new NotImplementedProviderError('openrouter');
 
       expect(error).toBeInstanceOf(Error);
       expect(error.name).toBe('NotImplementedProviderError');

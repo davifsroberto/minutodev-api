@@ -187,11 +187,11 @@ describe('AiService', () => {
       expect(logs).not.toContain('super-secret-key');
     });
 
-    it('marca providers placeholder no log de boot', () => {
+    it('marca providers placeholder (openrouter/ollama) no log de boot', () => {
       const logSpy = jest
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
-      process.env.LLM_PROVIDER = 'gemini';
+      process.env.LLM_PROVIDER = 'openrouter';
 
       service.onModuleInit();
 
@@ -200,11 +200,47 @@ describe('AiService', () => {
       );
     });
 
+    it('sinaliza gemini selecionado sem chave configurada', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      process.env.LLM_PROVIDER = 'gemini';
+      process.env.GEMINI_API_KEY = 'super-secret-gemini';
+      configurableProviderMock(registry, 'gemini').isConfigured.mockReturnValue(
+        false,
+      );
+
+      service.onModuleInit();
+
+      const logs = logSpy.mock.calls.flat().join(' ');
+      expect(logs).toMatch(/GEMINI_API_KEY/);
+      expect(logs).not.toContain('(não implementado');
+      expect(logs).not.toContain('super-secret-gemini');
+    });
+
+    it('registra gemini ativo sem aviso quando a chave está configurada', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      process.env.LLM_PROVIDER = 'gemini';
+      configurableProviderMock(registry, 'gemini').isConfigured.mockReturnValue(
+        true,
+      );
+
+      service.onModuleInit();
+
+      const logs = logSpy.mock.calls.flat().join(' ');
+      expect(logs).toContain('gemini');
+      expect(logs).not.toContain('não implementado');
+      expect(logs).not.toMatch(/GEMINI_API_KEY/);
+    });
+
     it('não registra valor de API key nos logs de seleção/startup', () => {
       const logSpy = jest
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
       process.env.DEEPSEEK_API_KEY = 'super-secret-key';
+      process.env.GEMINI_API_KEY = 'super-secret-gemini';
 
       for (const providerName of ['mock', 'deepseek', 'gemini'] as const) {
         process.env.LLM_PROVIDER = providerName;
@@ -212,9 +248,9 @@ describe('AiService', () => {
         service.resolveProviderName();
       }
 
-      expect(logSpy.mock.calls.flat().join(' ')).not.toContain(
-        'super-secret-key',
-      );
+      const logs = logSpy.mock.calls.flat().join(' ');
+      expect(logs).not.toContain('super-secret-key');
+      expect(logs).not.toContain('super-secret-gemini');
     });
   });
 });
@@ -226,7 +262,10 @@ function createRegistry(): LlmProviderRegistry {
       ...createProvider(deepseekOutput),
       isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
     },
-    gemini: createProvider(placeholderOutput('gemini')),
+    gemini: {
+      ...createProvider(placeholderOutput('gemini')),
+      isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
+    },
     openrouter: createProvider(placeholderOutput('openrouter')),
     ollama: createProvider(placeholderOutput('ollama')),
   };
@@ -242,8 +281,9 @@ function createProvider(output: EnrichContentOutput): ProviderMock {
 
 function configurableProviderMock(
   registry: LlmProviderRegistry,
+  name: 'deepseek' | 'gemini' = 'deepseek',
 ): ConfigurableProviderMock {
-  return registry.deepseek as ConfigurableProviderMock;
+  return registry[name] as ConfigurableProviderMock;
 }
 
 function placeholderOutput(providerName: LlmProviderName): EnrichContentOutput {
