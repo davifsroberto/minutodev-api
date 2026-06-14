@@ -28,6 +28,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
     "ingestion:rss": "ts-node src/modules/ingestion/ingestion.cli.ts",
+    "backfill:summary": "ts-node src/modules/contents/backfill-summary.cli.ts",
     "prepare": "husky"
   },
   "dependencies": {

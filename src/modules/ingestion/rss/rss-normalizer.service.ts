@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { ContentStatus, ContentType, Prisma, Source } from '@prisma/client';
 
+import { summarizeContent } from '../../../common/utils/summarize-content.util';
 import { RssItem } from './rss-parser.service';
 
 /**
@@ -25,10 +26,13 @@ export class RssNormalizerService {
     const url = item.link ?? item.guid;
     if (!url) return null;
 
-    // `rawSummary` preserva a descrição original; `summary` usa a versão mais
-    // "limpa" (contentSnippet) quando disponível.
+    // `rawSummary` preserva a descrição original completa; `summary` é só um
+    // teaser truncado para exibição (o `contentSnippet` do RSS vem com o artigo
+    // inteiro, sem corte — daí o `summarizeContent`).
     const rawSummary = item.content ?? item.summary ?? null;
-    const summary = item.contentSnippet ?? item.content ?? item.summary ?? null;
+    const summary = summarizeContent(
+      item.contentSnippet ?? item.content ?? item.summary,
+    );
 
     return {
       sourceId: source.id,
