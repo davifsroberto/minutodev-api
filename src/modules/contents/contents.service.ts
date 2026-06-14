@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
-import { Content, ContentStatus, Prisma, Source } from '@prisma/client';
+import {
+  Content,
+  ContentStatus,
+  EnrichmentStatus,
+  Prisma,
+  Source,
+} from '@prisma/client';
 
 import { endOfUtcDay, startOfUtcDay } from '../../common/utils/utc-day.util';
 import { PrismaService } from '../../database/prisma.service';
@@ -9,6 +15,13 @@ type ContentFilters = {
   category?: string;
   sourceId?: string;
   status?: ContentStatus;
+};
+
+/** Campos pt-BR já gerados pela IA, reaproveitados para exibição (ex.: radar). */
+export type ContentTranslation = {
+  translatedTitle: string | null;
+  shortSummary: string | null;
+  summary30s: string | null;
 };
 
 type PaginatedContents = {
@@ -158,6 +171,45 @@ export class ContentsService {
     const mostRecent = candidates.reduce((a, b) => (a > b ? a : b));
 
     return startOfUtcDay(mostRecent);
+  }
+
+  /**
+   * Traduções pt-BR já prontas (`COMPLETED`) para os conteúdos informados.
+   *
+   * Reaproveita o enrichment gerado sob demanda — sem disparar IA — para que o
+   * radar exiba título/resumo em pt-BR quando o conteúdo já foi aberto. Conteúdos
+   * sem tradução pronta simplesmente não aparecem no mapa (o chamador cai no
+   * texto original do feed).
+   */
+  async findReadyTranslations(
+    contentIds: string[],
+  ): Promise<Map<string, ContentTranslation>> {
+    if (contentIds.length === 0) return new Map();
+
+    const rows = await this.prisma.contentEnrichment.findMany({
+      where: {
+        contentId: { in: contentIds },
+        language: 'pt-BR',
+        status: EnrichmentStatus.COMPLETED,
+      },
+      select: {
+        contentId: true,
+        translatedTitle: true,
+        shortSummary: true,
+        summary30s: true,
+      },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.contentId,
+        {
+          translatedTitle: row.translatedTitle,
+          shortSummary: row.shortSummary,
+          summary30s: row.summary30s,
+        },
+      ]),
+    );
   }
 
   create(data: Prisma.ContentCreateInput): Promise<Content> {

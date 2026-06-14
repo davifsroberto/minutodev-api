@@ -16,6 +16,10 @@ export type {
   SupportedLanguage,
 } from './providers/llm-provider.interface';
 
+// Erro transitório (rate limit/5xx/timeout) exposto pela fachada para que os
+// módulos de negócio decidam o tratamento (ex.: manter o registro retryável).
+export { TransientAiError } from './ai.errors';
+
 /**
  * Orquestra o enriquecimento de conteúdo sobre o provedor de IA selecionado por
  * `LLM_PROVIDER` (padrão: mock). Não conhece Prisma nem banco — apenas escolhe o

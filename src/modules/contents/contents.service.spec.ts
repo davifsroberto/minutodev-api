@@ -4,6 +4,7 @@ import {
   Content,
   ContentStatus,
   ContentType,
+  EnrichmentStatus,
   Prisma,
   Source,
   SourceType,
@@ -13,6 +14,13 @@ import { PrismaService } from '../../database/prisma.service';
 import { ContentsService } from './contents.service';
 
 type TransactionResult = [number, Content[]];
+
+type TranslationRow = {
+  contentId: string;
+  translatedTitle: string | null;
+  shortSummary: string | null;
+  summary30s: string | null;
+};
 
 type ContentDelegateMock = {
   count: jest.Mock<unknown, [Prisma.ContentCountArgs]>;
@@ -28,8 +36,16 @@ type ContentDelegateMock = {
   >;
 };
 
+type EnrichmentDelegateMock = {
+  findMany: jest.Mock<
+    Promise<TranslationRow[]>,
+    [Prisma.ContentEnrichmentFindManyArgs]
+  >;
+};
+
 type PrismaServiceMock = {
   content: ContentDelegateMock;
+  contentEnrichment: EnrichmentDelegateMock;
   $transaction: jest.Mock<Promise<TransactionResult>, [unknown[]]>;
 };
 
@@ -85,6 +101,12 @@ const createPrismaMock = (): PrismaServiceMock => ({
     findUnique: jest.fn<
       Promise<(Content & { source: Source }) | null>,
       [Prisma.ContentFindUniqueArgs]
+    >(),
+  },
+  contentEnrichment: {
+    findMany: jest.fn<
+      Promise<TranslationRow[]>,
+      [Prisma.ContentEnrichmentFindManyArgs]
     >(),
   },
 });
@@ -337,6 +359,48 @@ describe('ContentsService', () => {
       await expect(
         service.findMostRecentEligibleDay(new Date('2026-06-13T00:00:00.000Z')),
       ).resolves.toBeNull();
+    });
+  });
+
+  describe('findReadyTranslations', () => {
+    it('returns an empty map without querying when no ids are given', async () => {
+      await expect(service.findReadyTranslations([])).resolves.toEqual(
+        new Map(),
+      );
+      expect(prisma.contentEnrichment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('queries completed pt-BR enrichments and maps them by contentId', async () => {
+      prisma.contentEnrichment.findMany.mockResolvedValue([
+        {
+          contentId: 'c-1',
+          translatedTitle: 'Título',
+          shortSummary: 'Resumo',
+          summary30s: null,
+        },
+      ]);
+
+      const result = await service.findReadyTranslations(['c-1', 'c-2']);
+
+      expect(prisma.contentEnrichment.findMany).toHaveBeenCalledWith({
+        where: {
+          contentId: { in: ['c-1', 'c-2'] },
+          language: 'pt-BR',
+          status: EnrichmentStatus.COMPLETED,
+        },
+        select: {
+          contentId: true,
+          translatedTitle: true,
+          shortSummary: true,
+          summary30s: true,
+        },
+      });
+      expect(result.get('c-1')).toEqual({
+        translatedTitle: 'Título',
+        shortSummary: 'Resumo',
+        summary30s: null,
+      });
+      expect(result.has('c-2')).toBe(false);
     });
   });
 

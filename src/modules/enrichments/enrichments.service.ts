@@ -9,7 +9,11 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
-import { AiService, SupportedLanguage } from '../ai/ai.service';
+import {
+  AiService,
+  SupportedLanguage,
+  TransientAiError,
+} from '../ai/ai.service';
 import { ContentsService } from '../contents/contents.service';
 import { OpenGraphImageService } from '../images/open-graph.service';
 
@@ -242,22 +246,30 @@ export class EnrichmentsService {
         },
       });
     } catch (error) {
-      // Log técnico (sem secrets — as mensagens dos provedores nunca incluem a
-      // chave); o usuário recebe uma mensagem amigável e genérica, e os campos
-      // de fallback (título/resumo originais) permanecem visíveis.
-      this.logger.error(
-        `Falha ao enriquecer o conteúdo ${content.id}: ${this.describeError(error)}`,
-      );
-
-      // A imagem independe da IA: ainda vale aplicá-la mesmo no estado FAILED.
+      // A imagem independe da IA: ainda vale aplicá-la mesmo na falha.
       await imagePending;
+
+      // Falha transitória (rate limit/5xx/timeout) NÃO é definitiva: voltamos a
+      // PENDING para que a próxima visualização tente de novo sozinha, em vez de
+      // marcar um FAILED permanente (que exigiria ação manual). Erros definitivos
+      // (bloqueio de segurança, resposta inválida, 4xx) viram FAILED.
+      const transient = error instanceof TransientAiError;
+
+      // Log técnico (sem secrets — as mensagens dos provedores nunca incluem a
+      // chave); o usuário vê o fallback (título/resumo originais).
+      this.logger.error(
+        `Falha ao enriquecer o conteúdo ${content.id}: ${this.describeError(error)}` +
+          (transient ? ' (transitório — mantido retryável)' : ''),
+      );
 
       return this.prisma.contentEnrichment.update({
         where: { id: enrichment.id },
-        data: {
-          status: EnrichmentStatus.FAILED,
-          errorMessage: GENERATION_FAILURE_MESSAGE,
-        },
+        data: transient
+          ? { status: EnrichmentStatus.PENDING, errorMessage: null }
+          : {
+              status: EnrichmentStatus.FAILED,
+              errorMessage: GENERATION_FAILURE_MESSAGE,
+            },
       });
     }
   }

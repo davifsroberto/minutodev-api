@@ -3,7 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Content, ContentType, Source } from '@prisma/client';
 
 import { startOfUtcDay } from '../../common/utils/utc-day.util';
-import { ContentsService } from '../contents/contents.service';
+import {
+  ContentsService,
+  ContentTranslation,
+} from '../contents/contents.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import {
   RADAR_SECTION_KEYS,
@@ -36,7 +39,9 @@ export class RadarService {
     const { day, items } = await this.resolveBriefing(requestedDay);
 
     const buckets = this.assignSections(items);
-    const sections = this.buildSections(buckets, query.limitPerSection);
+    const sections = await this.localizeSections(
+      this.buildSections(buckets, query.limitPerSection),
+    );
     const totalItems = sections.reduce(
       (total, section) => total + section.items.length,
       0,
@@ -46,6 +51,40 @@ export class RadarService {
       date: this.formatDay(day),
       estimatedReadTimeMinutes: Math.min(15, totalItems * 2),
       sections,
+    };
+  }
+
+  /**
+   * Substitui título/resumo pelo texto pt-BR quando já existe enrichment pronto
+   * (reuso, sem disparar IA). Conteúdos sem tradução mantêm o texto do feed.
+   */
+  private async localizeSections(
+    sections: RadarSectionDto[],
+  ): Promise<RadarSectionDto[]> {
+    const ids = sections.flatMap((section) =>
+      section.items.map((item) => item.id),
+    );
+    const translations = await this.contents.findReadyTranslations(ids);
+    if (translations.size === 0) return sections;
+
+    return sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => this.localizeItem(item, translations)),
+    }));
+  }
+
+  private localizeItem(
+    item: RadarItemDto,
+    translations: Map<string, ContentTranslation>,
+  ): RadarItemDto {
+    const translation = translations.get(item.id);
+    if (!translation) return item;
+
+    return {
+      ...item,
+      title: translation.translatedTitle ?? item.title,
+      summary:
+        translation.shortSummary ?? translation.summary30s ?? item.summary,
     };
   }
 

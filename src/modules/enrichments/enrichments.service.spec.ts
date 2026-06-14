@@ -17,6 +17,7 @@ import {
   AiService,
   EnrichContentInput,
   EnrichContentOutput,
+  TransientAiError,
 } from '../ai/ai.service';
 import { ContentsService } from '../contents/contents.service';
 import { OpenGraphImageService } from '../images/open-graph.service';
@@ -454,6 +455,38 @@ describe('EnrichmentsService', () => {
       const persisted = prisma.contentEnrichment.update.mock.calls[0][0].data
         .errorMessage as string;
       expect(persisted).not.toContain('super-secret');
+    });
+
+    it('mantém o registro retryável (PENDING) quando a IA falha de forma transitória', async () => {
+      const content = createContent();
+      const processing = createEnrichment({
+        status: EnrichmentStatus.PROCESSING,
+      });
+      const pending = createEnrichment({
+        status: EnrichmentStatus.PENDING,
+        errorMessage: null,
+      });
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(null);
+      prisma.contentEnrichment.create.mockResolvedValue(processing);
+      ai.enrichContent.mockRejectedValue(
+        new TransientAiError(
+          'Provedor Gemini respondeu com status HTTP 429',
+          59000,
+        ),
+      );
+      prisma.contentEnrichment.update.mockResolvedValue(pending);
+
+      const result = await service.getOrCreateForContent(content.id);
+
+      // Rate limit/5xx não é definitivo: volta a PENDING para auto-retry, em vez
+      // de FAILED permanente.
+      expect(result.status).toBe(EnrichmentStatus.PENDING);
+      expect(prisma.contentEnrichment.update).toHaveBeenCalledWith({
+        where: { id: processing.id },
+        data: { status: EnrichmentStatus.PENDING, errorMessage: null },
+      });
     });
 
     it('does not call the AI on a concurrent create collision (P2002): yields to the winner', async () => {

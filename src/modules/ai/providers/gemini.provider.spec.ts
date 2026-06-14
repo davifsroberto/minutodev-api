@@ -1,7 +1,8 @@
 import { Logger } from '@nestjs/common';
 
+import { TransientAiError } from '../ai.errors';
 import { ENRICHMENT_SYSTEM_PROMPT } from '../prompts/enrichment.prompt';
-import { GeminiProvider } from './gemini.provider';
+import { GeminiProvider, MAX_ATTEMPTS } from './gemini.provider';
 import { EnrichContentInput } from './llm-provider.interface';
 
 const input: EnrichContentInput = {
@@ -45,6 +46,7 @@ const DEFAULT_ENDPOINT =
 
 describe('GeminiProvider', () => {
   let provider: GeminiProvider;
+  let sleepSpy: jest.SpyInstance<Promise<void>, [number]>;
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -54,6 +56,13 @@ describe('GeminiProvider', () => {
     jest
       .spyOn(AbortSignal, 'timeout')
       .mockReturnValue(new AbortController().signal);
+    // Retries instantâneos: sem esperar o backoff real nos testes.
+    sleepSpy = jest
+      .spyOn(
+        provider as unknown as { sleep: (ms: number) => Promise<void> },
+        'sleep',
+      )
+      .mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -281,16 +290,155 @@ describe('GeminiProvider', () => {
     );
   });
 
-  it('nunca registra a API key nos logs em caso de falha', async () => {
+  it('reexecuta uma falha 5xx transitória e tem sucesso na tentativa seguinte', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        fakeResponse({ error: { status: 'UNAVAILABLE' } }, false, 503),
+      )
+      .mockResolvedValue(successfulResponse());
+
+    await expect(provider.enrichContent(input)).resolves.toEqual(validOutput);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // uma espera de backoff (base) entre a falha 5xx e o sucesso
+    expect(sleepSpy).toHaveBeenCalledTimes(1);
+    expect(sleepSpy).toHaveBeenCalledWith(500);
+  });
+
+  it('desiste após MAX_ATTEMPTS em 5xx persistente e lança TransientAiError', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        fakeResponse({ error: { status: 'UNAVAILABLE' } }, false, 503),
+      );
+
+    await expect(provider.enrichContent(input)).rejects.toBeInstanceOf(
+      TransientAiError,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    // espera entre as tentativas com backoff exponencial (500ms, 1000ms)
+    expect(sleepSpy).toHaveBeenCalledTimes(MAX_ATTEMPTS - 1);
+    expect(sleepSpy).toHaveBeenNthCalledWith(1, 500);
+    expect(sleepSpy).toHaveBeenNthCalledWith(2, 1000);
+  });
+
+  it('reexecuta um 429 com janela curta (retryDelay) respeitando a espera informada', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        fakeResponse(
+          {
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              details: [
+                {
+                  '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                  retryDelay: '1s',
+                },
+              ],
+            },
+          },
+          false,
+          429,
+        ),
+      )
+      .mockResolvedValue(successfulResponse());
+
+    await expect(provider.enrichContent(input)).resolves.toEqual(validOutput);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // usa a janela informada (1s), não o backoff exponencial
+    expect(sleepSpy).toHaveBeenCalledWith(1000);
+  });
+
+  it('não reexecuta um 429 sem janela de retry (uma única chamada)', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse(
+        {
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message: 'Quota exceeded',
+          },
+        },
+        false,
+        429,
+      ),
+    );
+
+    const error: unknown = await provider.enrichContent(input).catch((e) => e);
+
+    expect(error).toBeInstanceOf(TransientAiError);
+    expect((error as TransientAiError).retryAfterMs).toBeUndefined();
+    // 429 sem janela não deve martelar a quota: uma única tentativa, sem espera.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(sleepSpy).not.toHaveBeenCalled();
+  });
+
+  it('429 com janela longa (retryDelay) não é reexecutado e sobe como TransientAiError', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      fakeResponse(
+        {
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message: 'Quota exceeded',
+            details: [
+              {
+                '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                retryDelay: '59s',
+              },
+            ],
+          },
+        },
+        false,
+        429,
+      ),
+    );
+
+    const error: unknown = await provider.enrichContent(input).catch((e) => e);
+
+    expect(error).toBeInstanceOf(TransientAiError);
+    expect((error as TransientAiError).retryAfterMs).toBe(59000);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro de rede/timeout sobe como TransientAiError após as tentativas', async () => {
+    process.env.GEMINI_API_KEY = 'secret-key';
+    const timeoutError = new Error('aborted');
+    timeoutError.name = 'TimeoutError';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValue(timeoutError);
+
+    await expect(provider.enrichContent(input)).rejects.toBeInstanceOf(
+      TransientAiError,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+  });
+
+  it('nunca registra a API key nos logs em caso de falha (error e warn)', async () => {
     process.env.GEMINI_API_KEY = 'super-secret-gemini-key';
     const errorSpy = jest
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    // 500 reexecuta, então o canal warn (log de retry) também é exercitado.
     jest.spyOn(global, 'fetch').mockResolvedValue(fakeResponse({}, false, 500));
 
     await expect(provider.enrichContent(input)).rejects.toThrow();
 
-    const logged = errorSpy.mock.calls.flat().join(' ');
+    const logged = [...errorSpy.mock.calls, ...warnSpy.mock.calls]
+      .flat()
+      .join(' ');
+    expect(warnSpy).toHaveBeenCalled();
     expect(logged).not.toContain('super-secret-gemini-key');
   });
 });

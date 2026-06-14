@@ -8,14 +8,17 @@ import {
   SourceType,
 } from '@prisma/client';
 
-import { ContentsService } from '../contents/contents.service';
+import {
+  ContentsService,
+  ContentTranslation,
+} from '../contents/contents.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import { RADAR_MAX_DAILY_ITEMS, RadarService } from './radar.service';
 
 type RadarContent = Content & { source: Source };
 type ContentsServiceMock = Pick<
   ContentsService,
-  'findEligibleForDay' | 'findMostRecentEligibleDay'
+  'findEligibleForDay' | 'findMostRecentEligibleDay' | 'findReadyTranslations'
 >;
 
 const createSource = (overrides: Partial<Source> = {}): Source => ({
@@ -68,6 +71,10 @@ describe('RadarService', () => {
   let contents: {
     findEligibleForDay: jest.Mock<Promise<RadarContent[]>, [Date, number]>;
     findMostRecentEligibleDay: jest.Mock<Promise<Date | null>, [Date]>;
+    findReadyTranslations: jest.Mock<
+      Promise<Map<string, ContentTranslation>>,
+      [string[]]
+    >;
   };
   let service: RadarService;
 
@@ -75,8 +82,13 @@ describe('RadarService', () => {
     contents = {
       findEligibleForDay: jest.fn<Promise<RadarContent[]>, [Date, number]>(),
       findMostRecentEligibleDay: jest.fn<Promise<Date | null>, [Date]>(),
+      findReadyTranslations: jest.fn<
+        Promise<Map<string, ContentTranslation>>,
+        [string[]]
+      >(),
     };
     contents.findMostRecentEligibleDay.mockResolvedValue(null);
+    contents.findReadyTranslations.mockResolvedValue(new Map());
     service = new RadarService(
       contents as ContentsServiceMock as ContentsService,
     );
@@ -376,5 +388,69 @@ describe('RadarService', () => {
     expect(item).not.toHaveProperty('rawTitle');
     expect(item).not.toHaveProperty('rawSummary');
     expect(item).not.toHaveProperty('rawData');
+  });
+
+  it('reusa a tradução pt-BR quando há enrichment COMPLETED', async () => {
+    contents.findEligibleForDay.mockResolvedValue([
+      createContent({
+        category: 'ai',
+        id: 'localized',
+        title: 'Raw English Title',
+        summary: 'Raw english summary',
+      }),
+    ]);
+    contents.findReadyTranslations.mockResolvedValue(
+      new Map([
+        [
+          'localized',
+          {
+            translatedTitle: 'Título em português',
+            shortSummary: 'Resumo em português',
+            summary30s: null,
+          },
+        ],
+      ]),
+    );
+
+    const response = await service.getToday(createQuery());
+    const item = response.sections
+      .flatMap((section) => section.items)
+      .find((entry) => entry.id === 'localized');
+
+    expect(contents.findReadyTranslations).toHaveBeenCalledWith(['localized']);
+    expect(item?.title).toBe('Título em português');
+    expect(item?.summary).toBe('Resumo em português');
+  });
+
+  it('cai em summary30s e, sem traduções, no texto original do feed', async () => {
+    contents.findEligibleForDay.mockResolvedValue([
+      createContent({
+        category: 'ai',
+        id: 'partial',
+        title: 'Raw Title',
+        summary: 'Raw summary',
+      }),
+    ]);
+    contents.findReadyTranslations.mockResolvedValue(
+      new Map([
+        [
+          'partial',
+          {
+            translatedTitle: null,
+            shortSummary: null,
+            summary30s: 'Resumo de 30 segundos',
+          },
+        ],
+      ]),
+    );
+
+    const response = await service.getToday(createQuery());
+    const item = response.sections
+      .flatMap((section) => section.items)
+      .find((entry) => entry.id === 'partial');
+
+    // sem translatedTitle, mantém o título original; resumo cai no summary30s
+    expect(item?.title).toBe('Raw Title');
+    expect(item?.summary).toBe('Resumo de 30 segundos');
   });
 });
