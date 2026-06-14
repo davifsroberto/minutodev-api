@@ -1,16 +1,12 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
-import { DeepSeekProvider } from './providers/deepseek.provider';
+import { InvalidLlmProviderError } from './ai.errors';
+import type { LlmProviderName, LlmProviderRegistry } from './ai.tokens';
+import { DEFAULT_LLM_PROVIDER, LLM_PROVIDER_REGISTRY } from './ai.tokens';
 import {
   EnrichContentInput,
   EnrichContentOutput,
-  LlmProvider,
 } from './providers/llm-provider.interface';
-import { MockLlmProvider } from './providers/mock-llm.provider';
-
-export type LlmProviderName = 'mock' | 'deepseek';
-
-export const DEFAULT_LLM_PROVIDER: LlmProviderName = 'mock';
 
 /**
  * Orquestra o enriquecimento de conteúdo sobre o provedor de IA selecionado por
@@ -23,45 +19,59 @@ export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
 
   constructor(
-    private readonly mockProvider: MockLlmProvider,
-    private readonly deepseekProvider: DeepSeekProvider,
+    @Inject(LLM_PROVIDER_REGISTRY)
+    private readonly registry: LlmProviderRegistry,
   ) {}
 
   onModuleInit(): void {
     const name = this.resolveProviderName();
-    const pending =
-      name === 'deepseek' && !this.deepseekProvider.isConfigured()
-        ? ' (sem DEEPSEEK_API_KEY — as chamadas falharão até a chave ser configurada)'
-        : '';
+    const pending = this.resolveStartupNotice(name);
 
     this.logger.log(`Provedor de IA ativo: ${name}${pending}.`);
   }
 
   enrichContent(input: EnrichContentInput): Promise<EnrichContentOutput> {
-    return this.resolveProvider().enrichContent(input);
+    return this.registry[this.resolveProviderName()].enrichContent(input);
   }
 
   resolveProviderName(): LlmProviderName {
     const configured = process.env.LLM_PROVIDER?.trim().toLowerCase();
 
-    if (configured === 'deepseek') {
-      return 'deepseek';
-    }
-
     if (!configured || configured === 'mock') {
       return DEFAULT_LLM_PROVIDER;
     }
 
-    this.logger.warn(
-      `LLM_PROVIDER="${configured}" não reconhecido; usando "${DEFAULT_LLM_PROVIDER}".`,
-    );
+    if (
+      configured === 'deepseek' ||
+      configured === 'gemini' ||
+      configured === 'openrouter' ||
+      configured === 'ollama'
+    ) {
+      return configured;
+    }
 
-    return DEFAULT_LLM_PROVIDER;
+    throw new InvalidLlmProviderError(configured);
   }
 
-  private resolveProvider(): LlmProvider {
-    return this.resolveProviderName() === 'deepseek'
-      ? this.deepseekProvider
-      : this.mockProvider;
+  private resolveStartupNotice(name: LlmProviderName): string {
+    if (name === 'deepseek' && !this.isDeepseekConfigured()) {
+      return ' (sem DEEPSEEK_API_KEY — as chamadas falharão até a chave ser configurada)';
+    }
+
+    if (name === 'gemini' || name === 'openrouter' || name === 'ollama') {
+      return ' (não implementado — as chamadas falharão)';
+    }
+
+    return '';
+  }
+
+  private isDeepseekConfigured(): boolean {
+    const provider = this.registry.deepseek;
+
+    return (
+      'isConfigured' in provider &&
+      typeof provider.isConfigured === 'function' &&
+      provider.isConfigured()
+    );
   }
 }

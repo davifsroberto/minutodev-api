@@ -81,4 +81,29 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['src/modules/**/*.ts'],
+    ignores: ['src/modules/ai/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/ai/providers/*',
+                '**/ai/providers/**',
+                '@src/modules/ai/providers/*',
+                '@src/modules/ai/providers/**',
+                'src/modules/ai/providers/*',
+                'src/modules/ai/providers/**',
+              ],
+              message:
+                'Business modules must depend on AiService, not concrete AI providers.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

@@ -1,13 +1,17 @@
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { InvalidLlmProviderError } from './ai.errors';
 import { AiService } from './ai.service';
-import { DeepSeekProvider } from './providers/deepseek.provider';
+import {
+  LLM_PROVIDER_REGISTRY,
+  LlmProviderName,
+  LlmProviderRegistry,
+} from './ai.tokens';
 import {
   EnrichContentInput,
   EnrichContentOutput,
 } from './providers/llm-provider.interface';
-import { MockLlmProvider } from './providers/mock-llm.provider';
 
 const input: EnrichContentInput = {
   title: 'A title',
@@ -34,32 +38,24 @@ type ProviderMock = {
   enrichContent: jest.Mock<Promise<EnrichContentOutput>, [EnrichContentInput]>;
 };
 
+type ConfigurableProviderMock = ProviderMock & {
+  isConfigured: jest.Mock<boolean, []>;
+};
+
 describe('AiService', () => {
   let service: AiService;
-  let mockProvider: ProviderMock;
-  let deepseekProvider: ProviderMock & { isConfigured: jest.Mock<boolean, []> };
+  let registry: LlmProviderRegistry;
   const originalEnv = process.env;
 
   beforeEach(async () => {
     process.env = { ...originalEnv };
 
-    mockProvider = {
-      enrichContent: jest
-        .fn<Promise<EnrichContentOutput>, [EnrichContentInput]>()
-        .mockResolvedValue(mockOutput),
-    };
-    deepseekProvider = {
-      enrichContent: jest
-        .fn<Promise<EnrichContentOutput>, [EnrichContentInput]>()
-        .mockResolvedValue(deepseekOutput),
-      isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
-    };
+    registry = createRegistry();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AiService,
-        { provide: MockLlmProvider, useValue: mockProvider },
-        { provide: DeepSeekProvider, useValue: deepseekProvider },
+        { provide: LLM_PROVIDER_REGISTRY, useValue: registry },
       ],
     }).compile();
 
@@ -77,8 +73,13 @@ describe('AiService', () => {
       expect(service.resolveProviderName()).toBe('mock');
     });
 
+    it('usa mock quando LLM_PROVIDER está vazio ou contém espaços', () => {
+      process.env.LLM_PROVIDER = '   ';
+      expect(service.resolveProviderName()).toBe('mock');
+    });
+
     it('usa mock quando LLM_PROVIDER=mock', () => {
-      process.env.LLM_PROVIDER = 'mock';
+      process.env.LLM_PROVIDER = ' Mock ';
       expect(service.resolveProviderName()).toBe('mock');
     });
 
@@ -87,14 +88,23 @@ describe('AiService', () => {
       expect(service.resolveProviderName()).toBe('deepseek');
     });
 
-    it('cai para mock e emite aviso quando LLM_PROVIDER é desconhecido', () => {
-      const warnSpy = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation(() => undefined);
-      process.env.LLM_PROVIDER = 'openai';
+    it.each<LlmProviderName>(['gemini', 'openrouter', 'ollama'])(
+      'usa %s quando selecionado por env',
+      (providerName) => {
+        process.env.LLM_PROVIDER = providerName.toUpperCase();
+        expect(service.resolveProviderName()).toBe(providerName);
+      },
+    );
 
-      expect(service.resolveProviderName()).toBe('mock');
-      expect(warnSpy).toHaveBeenCalled();
+    it('lança InvalidLlmProviderError para valor desconhecido listando os aceitos', () => {
+      process.env.LLM_PROVIDER = 'depseek';
+
+      expect(() => service.resolveProviderName()).toThrow(
+        InvalidLlmProviderError,
+      );
+      expect(() => service.resolveProviderName()).toThrow(
+        'Invalid LLM provider "depseek". Accepted providers: mock, deepseek, gemini, openrouter, ollama.',
+      );
     });
   });
 
@@ -103,16 +113,40 @@ describe('AiService', () => {
       delete process.env.LLM_PROVIDER;
 
       await expect(service.enrichContent(input)).resolves.toBe(mockOutput);
-      expect(mockProvider.enrichContent).toHaveBeenCalledWith(input);
-      expect(deepseekProvider.enrichContent).not.toHaveBeenCalled();
+      expect(registry.mock.enrichContent).toHaveBeenCalledWith(input);
+      expect(registry.deepseek.enrichContent).not.toHaveBeenCalled();
     });
 
     it('delega ao DeepSeek quando selecionado por env', async () => {
       process.env.LLM_PROVIDER = 'deepseek';
 
       await expect(service.enrichContent(input)).resolves.toBe(deepseekOutput);
-      expect(deepseekProvider.enrichContent).toHaveBeenCalledWith(input);
-      expect(mockProvider.enrichContent).not.toHaveBeenCalled();
+      expect(registry.deepseek.enrichContent).toHaveBeenCalledWith(input);
+      expect(registry.mock.enrichContent).not.toHaveBeenCalled();
+    });
+
+    it.each<LlmProviderName>(['gemini', 'openrouter', 'ollama'])(
+      'delega ao registry.%s quando selecionado',
+      async (providerName) => {
+        process.env.LLM_PROVIDER = providerName;
+
+        await expect(service.enrichContent(input)).resolves.toEqual(
+          placeholderOutput(providerName),
+        );
+        expect(registry[providerName].enrichContent).toHaveBeenCalledWith(
+          input,
+        );
+        expect(registry.mock.enrichContent).not.toHaveBeenCalled();
+        expect(registry.deepseek.enrichContent).not.toHaveBeenCalled();
+      },
+    );
+
+    it('propaga InvalidLlmProviderError no caminho de seleção', () => {
+      process.env.LLM_PROVIDER = 'depseek';
+
+      expect(() => service.enrichContent(input)).toThrow(
+        InvalidLlmProviderError,
+      );
     });
   });
 
@@ -128,16 +162,93 @@ describe('AiService', () => {
       expect(logSpy.mock.calls.flat().join(' ')).toContain('mock');
     });
 
+    it('lança InvalidLlmProviderError no boot e não registra sucesso para provider inválido', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      process.env.LLM_PROVIDER = 'depseek';
+
+      expect(() => service.onModuleInit()).toThrow(InvalidLlmProviderError);
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
     it('sinaliza deepseek selecionado sem chave configurada', () => {
       const logSpy = jest
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
       process.env.LLM_PROVIDER = 'deepseek';
-      deepseekProvider.isConfigured.mockReturnValue(false);
+      process.env.DEEPSEEK_API_KEY = 'super-secret-key';
+      configurableProviderMock(registry).isConfigured.mockReturnValue(false);
 
       service.onModuleInit();
 
-      expect(logSpy.mock.calls.flat().join(' ')).toMatch(/DEEPSEEK_API_KEY/);
+      const logs = logSpy.mock.calls.flat().join(' ');
+      expect(logs).toMatch(/DEEPSEEK_API_KEY/);
+      expect(logs).not.toContain('super-secret-key');
+    });
+
+    it('marca providers placeholder no log de boot', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      process.env.LLM_PROVIDER = 'gemini';
+
+      service.onModuleInit();
+
+      expect(logSpy.mock.calls.flat().join(' ')).toContain(
+        '(não implementado — as chamadas falharão)',
+      );
+    });
+
+    it('não registra valor de API key nos logs de seleção/startup', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      process.env.DEEPSEEK_API_KEY = 'super-secret-key';
+
+      for (const providerName of ['mock', 'deepseek', 'gemini'] as const) {
+        process.env.LLM_PROVIDER = providerName;
+        service.onModuleInit();
+        service.resolveProviderName();
+      }
+
+      expect(logSpy.mock.calls.flat().join(' ')).not.toContain(
+        'super-secret-key',
+      );
     });
   });
 });
+
+function createRegistry(): LlmProviderRegistry {
+  return {
+    mock: createProvider(mockOutput),
+    deepseek: {
+      ...createProvider(deepseekOutput),
+      isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
+    },
+    gemini: createProvider(placeholderOutput('gemini')),
+    openrouter: createProvider(placeholderOutput('openrouter')),
+    ollama: createProvider(placeholderOutput('ollama')),
+  };
+}
+
+function createProvider(output: EnrichContentOutput): ProviderMock {
+  return {
+    enrichContent: jest
+      .fn<Promise<EnrichContentOutput>, [EnrichContentInput]>()
+      .mockResolvedValue(output),
+  };
+}
+
+function configurableProviderMock(
+  registry: LlmProviderRegistry,
+): ConfigurableProviderMock {
+  return registry.deepseek as ConfigurableProviderMock;
+}
+
+function placeholderOutput(providerName: LlmProviderName): EnrichContentOutput {
+  return {
+    ...mockOutput,
+    translatedTitle: `from-${providerName}`,
+  };
+}

@@ -146,38 +146,70 @@ Ao final, é impresso um resumo da execução:
 ## Inteligência Artificial (IA)
 
 O módulo [`ai`](src/modules/ai) fornece uma **camada de IA abstrata** para gerar
-conteúdo enriquecido (tradução/resumo em pt-BR) **sob demanda**. As regras de
-negócio dependem apenas da interface `LlmProvider` — nunca de um provedor
-concreto —, o que permite trocar de provedor (DeepSeek, OpenAI, Claude, Gemini,
-OpenRouter, Ollama) sem alterar o restante do sistema.
+conteúdo enriquecido (tradução/resumo em pt-BR) **sob demanda**. O padrão é
+`mock`, então a aplicação inicia e roda sem nenhuma chave de IA configurada, sem
+custo e sem chamada externa. As regras de negócio dependem apenas da fachada
+`AiService`, nunca de um provedor concreto.
 
-- **`AiService`** (fachada): escolhe o provedor por `LLM_PROVIDER` e expõe
-  `enrichContent(input)`. Não conhece Prisma nem banco — apenas orquestra.
-- **`MockLlmProvider`** (padrão): não chama API externa, não gera custo e retorna
-  uma saída determinística derivada da entrada.
-- **`DeepSeekProvider`**: estrutura pronta para a API do DeepSeek (formato
-  compatível com OpenAI). Lê tudo de variáveis de ambiente, usa _timeout_ e trata
-  erros. Sem chave, falha com mensagem clara **apenas quando chamado** — o projeto
-  roda normalmente no provedor mock.
+Providers reconhecidos por `LLM_PROVIDER`:
+
+| Provider | Status | Comportamento atual |
+| --- | --- | --- |
+| `mock` | Implementado | Padrão; não chama API externa e retorna saída determinística. |
+| `deepseek` | Implementado | Usa `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `LLM_MODEL` e `LLM_TIMEOUT_MS`. |
+| `gemini` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
+| `openrouter` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
+| `ollama` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
+
+Para ativar o DeepSeek, defina `LLM_PROVIDER=deepseek` e
+`DEEPSEEK_API_KEY` no seu `.env`. `DEEPSEEK_BASE_URL` pode ficar no padrão
+`https://api.deepseek.com`; `LLM_MODEL` é opcional e, quando vazio, usa o padrão
+do provider (`deepseek-chat` para `deepseek`); `LLM_TIMEOUT_MS` é opcional e usa
+`30000`.
+
+Para uma futura ativação do Gemini, a configuração esperada será
+`LLM_PROVIDER=gemini`, `GEMINI_API_KEY` e, se necessário, `GEMINI_BASE_URL`.
+Hoje esse provider é apenas placeholder: a aplicação inicia, mas a primeira
+chamada de IA falha com `LLM provider "gemini" is not implemented yet.`.
+
+Falhas de configuração têm dois momentos distintos:
+
+- Valor inválido de `LLM_PROVIDER`, como `depseek` ou `openai`, falha no boot com
+  `Invalid LLM provider "<valor>". Accepted providers: mock, deepseek, gemini, openrouter, ollama.`.
+- Valor reconhecido, mas ainda placeholder (`gemini`, `openrouter`, `ollama`),
+  permite o boot. A chamada de IA falha sob demanda com `LLM provider "<provider>" is not implemented yet.`.
+
+O log de startup sempre informa o provider ativo. Para `deepseek` sem chave, ele
+inclui o aviso `sem DEEPSEEK_API_KEY — as chamadas falharão até a chave ser
+configurada`; para placeholders, inclui `não implementado — as chamadas
+falharão`.
+
+> **Aviso de ruptura:** `DEEPSEEK_MODEL` → `LLM_MODEL` e
+> `DEEPSEEK_TIMEOUT_MS` → `LLM_TIMEOUT_MS`. Os nomes antigos não são mais lidos;
+> atualize qualquer `.env` local.
 
 > **Controle de custo:** nesta fase a IA é apenas infraestrutura. Não há job em
 > lote, fila ou cron; a ingestão RSS e o `GET /radar/today` **não** chamam IA. A
-> geração real será feita sob demanda em uma sprint futura — nenhuma chamada e
-> nenhum custo ocorrem sem ação explícita.
+> geração real é sempre sob demanda; nenhuma chamada e nenhum custo ocorrem sem
+> ação explícita.
 
 ### Variáveis de ambiente
 
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `mock` | Provedor ativo: `mock` ou `deepseek`. |
-| `DEEPSEEK_API_KEY` | _(vazio)_ | Chave da API DeepSeek. **Nunca** commite. |
+| `LLM_PROVIDER` | `mock` | Provedor ativo: `mock`, `deepseek`, `gemini`, `openrouter` ou `ollama`. |
+| `LLM_MODEL` | Padrão do provider | Modelo genérico de LLM; opcional. Para `deepseek`, vazio usa `deepseek-chat`. |
+| `LLM_TIMEOUT_MS` | `30000` | Tempo limite genérico das chamadas de LLM, em ms. Opcional. |
+| `DEEPSEEK_API_KEY` | _(vazio)_ | Chave da API DeepSeek. **Nunca** commite nem logue. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base da API DeepSeek. |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | Modelo usado nas chamadas. |
-| `DEEPSEEK_TIMEOUT_MS` | `30000` | Tempo limite (ms) das chamadas. Opcional. |
+| `GEMINI_API_KEY` | _(vazio)_ | Placeholder para a futura chave Gemini; ainda não implementado. |
+| `GEMINI_BASE_URL` | _(vazio)_ | Placeholder para a futura base Gemini; ainda não implementado. |
+| `OPENROUTER_API_KEY` | _(vazio)_ | Placeholder para a futura chave OpenRouter; ainda não implementado. |
+| `OLLAMA_BASE_URL` | _(vazio)_ | Placeholder para a futura base Ollama; ainda não implementado. |
 
 A chave de API **nunca** é logada nem versionada (`.env` está no `.gitignore`;
-veja o [`.env.example`](.env.example)). Para ativar o DeepSeek, defina
-`LLM_PROVIDER=deepseek` e `DEEPSEEK_API_KEY` no seu `.env`.
+veja o [`.env.example`](.env.example)). Campos `*_API_KEY` devem ficar vazios no
+exemplo e só receber valor no `.env` local ou no ambiente de deploy.
 
 ## Compile and run the project
 

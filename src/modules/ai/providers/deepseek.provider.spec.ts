@@ -30,6 +30,12 @@ const chatCompletion = (content: string): unknown => ({
   choices: [{ message: { content } }],
 });
 
+const successfulChatCompletion = (): Response =>
+  fakeResponse(chatCompletion(JSON.stringify(validOutput)));
+
+const oldModelEnv = ['DEEPSEEK', 'MODEL'].join('_');
+const oldTimeoutEnv = ['DEEPSEEK', 'TIMEOUT_MS'].join('_');
+
 describe('DeepSeekProvider', () => {
   let provider: DeepSeekProvider;
   const originalEnv = process.env;
@@ -70,9 +76,7 @@ describe('DeepSeekProvider', () => {
     process.env.DEEPSEEK_API_KEY = 'secret-key';
     const fetchSpy = jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(
-        fakeResponse(chatCompletion(JSON.stringify(validOutput))),
-      );
+      .mockResolvedValue(successfulChatCompletion());
 
     const result = await provider.enrichContent(input);
 
@@ -92,21 +96,91 @@ describe('DeepSeekProvider', () => {
     expect(Array.isArray(body.messages)).toBe(true);
   });
 
-  it('respeita DEEPSEEK_BASE_URL e DEEPSEEK_MODEL customizados', async () => {
+  it('usa LLM_MODEL quando configurado', async () => {
     process.env.DEEPSEEK_API_KEY = 'secret-key';
-    process.env.DEEPSEEK_BASE_URL = 'https://proxy.local';
-    process.env.DEEPSEEK_MODEL = 'deepseek-reasoner';
+    process.env.LLM_MODEL = 'deepseek-reasoner';
     const fetchSpy = jest
       .spyOn(global, 'fetch')
-      .mockResolvedValue(
-        fakeResponse(chatCompletion(JSON.stringify(validOutput))),
-      );
+      .mockResolvedValue(successfulChatCompletion());
 
     await provider.enrichContent(input);
 
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://proxy.local/chat/completions');
+    const [, init] = fetchSpy.mock.calls[0];
     expect(JSON.parse(init?.body as string).model).toBe('deepseek-reasoner');
+  });
+
+  it('usa deepseek-chat como fallback quando LLM_MODEL não está configurado', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    delete process.env.LLM_MODEL;
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init?.body as string).model).toBe('deepseek-chat');
+  });
+
+  it('ignora a variável antiga de modelo quando LLM_MODEL não está configurado', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    process.env[oldModelEnv] = 'deepseek-reasoner';
+    delete process.env.LLM_MODEL;
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init?.body as string).model).toBe('deepseek-chat');
+  });
+
+  it('usa LLM_TIMEOUT_MS no AbortSignal.timeout', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    process.env.LLM_TIMEOUT_MS = '5000';
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    jest.spyOn(global, 'fetch').mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(5000);
+  });
+
+  it('usa 30000 como timeout padrão quando LLM_TIMEOUT_MS não está configurado', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    delete process.env.LLM_TIMEOUT_MS;
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    jest.spyOn(global, 'fetch').mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(30000);
+  });
+
+  it('ignora a variável antiga de timeout quando LLM_TIMEOUT_MS não está configurado', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    process.env[oldTimeoutEnv] = '1000';
+    delete process.env.LLM_TIMEOUT_MS;
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    jest.spyOn(global, 'fetch').mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    expect(timeoutSpy).toHaveBeenCalledWith(30000);
+  });
+
+  it('respeita DEEPSEEK_BASE_URL customizado', async () => {
+    process.env.DEEPSEEK_API_KEY = 'secret-key';
+    process.env.DEEPSEEK_BASE_URL = 'https://proxy.local';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(successfulChatCompletion());
+
+    await provider.enrichContent(input);
+
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://proxy.local/chat/completions');
   });
 
   it('lança quando a resposta HTTP não é bem-sucedida', async () => {

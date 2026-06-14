@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { resolveLlmModel, resolveLlmTimeoutMs } from '../llm-config.util';
 import {
   buildEnrichmentMessages,
   parseEnrichmentResponse,
@@ -11,8 +12,6 @@ import {
 } from './llm-provider.interface';
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
-const DEFAULT_MODEL = 'deepseek-chat';
-const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Subconjunto da resposta do endpoint OpenAI-compatible do DeepSeek. */
 interface DeepSeekChatCompletion {
@@ -45,8 +44,8 @@ export class DeepSeekProvider implements LlmProvider {
     }
 
     const baseUrl = process.env.DEEPSEEK_BASE_URL?.trim() || DEFAULT_BASE_URL;
-    const model = process.env.DEEPSEEK_MODEL?.trim() || DEFAULT_MODEL;
-    const timeoutMs = this.resolveTimeout();
+    const model = resolveLlmModel('deepseek-chat');
+    const timeoutMs = resolveLlmTimeoutMs();
 
     let response: Response;
     try {
@@ -90,13 +89,6 @@ export class DeepSeekProvider implements LlmProvider {
     }
 
     return parseEnrichmentResponse(content);
-  }
-
-  private resolveTimeout(): number {
-    const raw = process.env.DEEPSEEK_TIMEOUT_MS;
-    const parsed = raw ? Number(raw) : Number.NaN;
-
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
   }
 
   private describeError(error: unknown): string {
