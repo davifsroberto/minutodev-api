@@ -17,7 +17,8 @@ export function resolveRssImageUrl(
     imageFromEnclosure(item.enclosure) ??
     imageFromMedia(item.mediaContent) ??
     imageFromMedia(item.mediaThumbnail) ??
-    imageFromHtml(item.content ?? item.summary) ??
+    imageFromHtml(item.content) ??
+    imageFromHtml(item.summary) ??
     cleanImageUrl(feedImageUrl)
   );
 }

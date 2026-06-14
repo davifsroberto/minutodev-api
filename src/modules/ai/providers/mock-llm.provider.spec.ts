@@ -20,8 +20,10 @@ describe('MockLlmProvider', () => {
     const output = await provider.enrichContent(input);
 
     expect(typeof output.translatedTitle).toBe('string');
+    expect(typeof output.summary30s).toBe('string');
     expect(typeof output.shortSummary).toBe('string');
     expect(typeof output.whyItMatters).toBe('string');
+    expect(typeof output.keyInsight).toBe('string');
     expect(typeof output.briefContent).toBe('string');
     expect(typeof output.example).toBe('string');
     expect(typeof output.whenToUse).toBe('string');
@@ -29,6 +31,8 @@ describe('MockLlmProvider', () => {
     expect(output.keyPoints.every((point) => typeof point === 'string')).toBe(
       true,
     );
+    expect(output.audienceFor.length).toBeGreaterThan(0);
+    expect(output.audienceIgnore.length).toBeGreaterThan(0);
   });
 
   it('não chama nenhuma API externa', async () => {

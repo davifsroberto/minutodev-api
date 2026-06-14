@@ -23,9 +23,11 @@ export class MockLlmProvider implements LlmProvider {
 
     return Promise.resolve({
       translatedTitle: `[pt-BR] ${input.title}`,
+      summary30s: `Resumo de 30s (mock) de "${input.title}". Saída de exemplo, sem IA real. Útil para validar o fluxo.`,
       shortSummary:
         summary ?? `Resumo de exemplo (mock) para "${input.title}".`,
       whyItMatters: `Conteúdo potencialmente relevante para desenvolvedores acompanharem, segundo ${source}.`,
+      keyInsight: `Insight de exemplo (mock): a principal ideia de "${input.title}" apareceria aqui.`,
       keyPoints: [
         `Tema: ${input.title}`,
         `Fonte: ${source}`,
@@ -33,6 +35,10 @@ export class MockLlmProvider implements LlmProvider {
       ],
       example: `Exemplo de exemplo (mock) relacionado a "${input.title}".`,
       whenToUse: `Quando você quiser validar o fluxo sem IA real (mock), segundo ${source}.`,
+      audienceFor: ['Desenvolvedores', 'Curiosos por tecnologia'],
+      audienceIgnore: [
+        'Quem busca o conteúdo definitivo (configure uma IA real)',
+      ],
       briefContent:
         summary ??
         `Versão condensada de exemplo (mock) de "${input.title}". Configure um provedor de IA real para gerar o conteúdo definitivo.`,

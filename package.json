@@ -30,6 +30,9 @@
     "ingestion:rss": "ts-node src/modules/ingestion/ingestion.cli.ts",
     "backfill:summary": "ts-node src/modules/contents/backfill-summary.cli.ts",
     "backfill:image": "ts-node src/modules/contents/backfill-image.cli.ts",
+    "db:drop": "prisma migrate reset --force",
+    "db:populate": "npm run prisma:seed && npm run ingestion:rss",
+    "db:reset": "npm run db:drop && npm run db:populate",
     "prepare": "husky"
   },
   "dependencies": {

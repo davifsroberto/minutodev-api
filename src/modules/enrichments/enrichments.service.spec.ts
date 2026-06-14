@@ -61,11 +61,15 @@ type AiServiceMock = {
 
 const aiOutput: EnrichContentOutput = {
   translatedTitle: 'Título traduzido pela IA',
+  summary30s: 'Saiu algo novo. Ficou mais rápido. Vale para quem faz build.',
   shortSummary: 'Resumo curto gerado pela IA.',
   whyItMatters: 'Importa porque muda o fluxo de build.',
+  keyInsight: 'O ganho real está no tempo de feedback.',
   keyPoints: ['Ponto 1', 'Ponto 2'],
   example: 'npm run build caiu de 12s para 7s.',
   whenToUse: 'Vale a pena em monorepos grandes.',
+  audienceFor: ['Backend', 'DevOps'],
+  audienceIgnore: ['Frontend puro'],
   briefContent: 'Conteúdo curado e original em pt-BR.',
 };
 
@@ -110,12 +114,15 @@ const createContent = (
 const createEnrichment = (
   overrides: Partial<ContentEnrichment> = {},
 ): ContentEnrichment => ({
+  audienceFor: [],
+  audienceIgnore: [],
   briefContent: 'Resumo do conteúdo.',
   contentId: 'content-1',
   createdAt: new Date('2026-06-14T12:00:00.000Z'),
   errorMessage: null,
   example: null,
   id: 'enrichment-1',
+  keyInsight: null,
   keyPoints: [],
   language: DEFAULT_ENRICHMENT_LANGUAGE,
   model: null,
@@ -123,6 +130,7 @@ const createEnrichment = (
   provider: null,
   shortSummary: 'Resumo do conteúdo.',
   status: EnrichmentStatus.PENDING,
+  summary30s: null,
   translatedTitle: 'Título original',
   updatedAt: new Date('2026-06-14T12:00:00.000Z'),
   whenToUse: null,
@@ -313,11 +321,15 @@ describe('EnrichmentsService', () => {
         where: { id: processing.id },
         data: {
           translatedTitle: aiOutput.translatedTitle,
+          summary30s: aiOutput.summary30s,
           shortSummary: aiOutput.shortSummary,
           whyItMatters: aiOutput.whyItMatters,
+          keyInsight: aiOutput.keyInsight,
           keyPoints: aiOutput.keyPoints,
           example: aiOutput.example,
           whenToUse: aiOutput.whenToUse,
+          audienceFor: aiOutput.audienceFor,
+          audienceIgnore: aiOutput.audienceIgnore,
           briefContent: aiOutput.briefContent,
           provider: 'gemini',
           model: 'gemini-2.5-flash',

@@ -20,6 +20,15 @@ export class EnrichmentResponseDto {
   translatedTitle!: string | null;
 
   @ApiProperty({
+    description:
+      'Resumo em 30 segundos (até 3 frases: o quê, conclusão, por que importa). Nulo enquanto não enriquecido.',
+    nullable: true,
+    type: String,
+  })
+  summary30s!: string | null;
+
+  @ApiProperty({
+    description: 'O que é, em 1 a 2 frases.',
     example: 'A nova versão do TypeScript traz melhorias no compilador.',
     nullable: true,
     type: String,
@@ -32,6 +41,14 @@ export class EnrichmentResponseDto {
     type: String,
   })
   whyItMatters!: string | null;
+
+  @ApiProperty({
+    description:
+      'Insight principal: a ideia para lembrar (1 a 2 frases). Nulo enquanto não enriquecido.',
+    nullable: true,
+    type: String,
+  })
+  keyInsight!: string | null;
 
   @ApiProperty({
     description:
@@ -58,6 +75,23 @@ export class EnrichmentResponseDto {
     type: String,
   })
   whenToUse!: string | null;
+
+  @ApiProperty({
+    description:
+      'Para quem o conteúdo importa (perfis técnicos). Vazio enquanto não enriquecido.',
+    example: ['Backend', 'Segurança'],
+    isArray: true,
+    type: String,
+  })
+  audienceFor!: string[];
+
+  @ApiProperty({
+    description: 'Perfis que podem ignorar o conteúdo. Pode ser vazio.',
+    example: ['Frontend puro'],
+    isArray: true,
+    type: String,
+  })
+  audienceIgnore!: string[];
 
   @ApiProperty({
     description: 'Conteúdo detalhado em pt-BR para leitura sem abrir a fonte.',

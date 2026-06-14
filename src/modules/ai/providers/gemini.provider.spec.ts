@@ -14,11 +14,15 @@ const input: EnrichContentInput = {
 
 const validOutput = {
   translatedTitle: 'Novo compilador lançado',
+  summary30s: 'Novo compilador. Mais rápido. Vale para quem sofre com build.',
   shortSummary: 'Builds mais rápidas.',
   whyItMatters: 'Reduz o tempo de feedback.',
+  keyInsight: 'O gargalo era o tempo de build, não a linguagem.',
   keyPoints: ['Mais rápido', 'Compatível'],
   example: 'Build caiu de 12s para 7s.',
   whenToUse: 'Vale a pena em projetos grandes.',
+  audienceFor: ['Backend', 'DevOps'],
+  audienceIgnore: ['Frontend puro'],
   briefContent: 'Resumo breve e original em pt-BR.',
 };
 

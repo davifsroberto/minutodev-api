@@ -26,13 +26,21 @@ export interface EnrichContentInput {
 
 export interface EnrichContentOutput {
   translatedTitle: string;
+  /** Resumo em 30 segundos: até 3 frases (o quê / conclusão / por que importa). */
+  summary30s: string | null;
   shortSummary: string;
   whyItMatters: string;
+  /** A principal ideia para lembrar — 1 a 2 frases. */
+  keyInsight: string | null;
   keyPoints: string[];
   /** Exemplo concreto citado no artigo (comando, número, caso). Nulo se não houver. */
   example: string | null;
   /** Quando vale a pena usar / trade-offs. Nulo se o artigo não deixar claro. */
   whenToUse: string | null;
+  /** Perfis para quem o conteúdo importa (termos técnicos reais). */
+  audienceFor: string[];
+  /** Perfis que podem ignorar o conteúdo. */
+  audienceIgnore: string[];
   briefContent: string;
 }
 

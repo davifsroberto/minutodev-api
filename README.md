@@ -151,14 +151,16 @@ Ao final, é impresso um resumo da execução:
 ## Inteligência Artificial (IA)
 
 O módulo [`ai`](src/modules/ai) fornece uma **camada de IA abstrata** para gerar
-um **briefing editorial** em pt-BR **sob demanda**. A saída é estruturada (o que
-é, por que importa, principais aprendizados, exemplo citado, quando vale a pena
-usar e conteúdo detalhado), com tradução natural (não literal) e fatos concretos
-— a ideia é entender o conteúdo sem abrir a fonte. O texto completo da fonte
-(`Content.rawSummary`, limitado em tamanho) é enviado ao modelo como matéria-prima.
-O padrão é `mock`, então a aplicação inicia e roda sem nenhuma chave de IA
-configurada, sem custo e sem chamada externa. As regras de negócio dependem
-apenas da fachada `AiService`, nunca de um provedor concreto.
+um **briefing editorial** em pt-BR **sob demanda**. A saída é estruturada para
+leitura rápida (10s/1min/3min): resumo em 30 segundos, o que é, por que importa,
+insight principal, principais aprendizados, exemplo citado, quando vale a pena
+usar, para quem importa / pode ignorar, e conteúdo detalhado — com tradução
+natural (não literal) e fatos concretos, para entender o conteúdo sem abrir a
+fonte. O texto completo da fonte (`Content.rawSummary`, limitado em tamanho) é
+enviado ao modelo como matéria-prima. O padrão é `mock`, então a aplicação inicia
+e roda sem nenhuma chave de IA configurada, sem custo e sem chamada externa. As
+regras de negócio dependem apenas da fachada `AiService`, nunca de um provedor
+concreto.
 
 Providers reconhecidos por `LLM_PROVIDER`:
 

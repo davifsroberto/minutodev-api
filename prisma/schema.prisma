@@ -97,11 +97,15 @@ model ContentEnrichment {
   contentId       String
   language        String           @default("pt-BR")
   translatedTitle String?
+  summary30s      String?
   shortSummary    String?
   whyItMatters    String?
+  keyInsight      String?
   keyPoints       String[]
   example         String?
   whenToUse       String?
+  audienceFor     String[]
+  audienceIgnore  String[]
   briefContent    String?
   originalUrl     String
   provider        String?

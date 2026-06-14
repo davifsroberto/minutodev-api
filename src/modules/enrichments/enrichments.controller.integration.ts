@@ -30,11 +30,15 @@ type EnrichmentResponse = {
   contentId: string;
   language: string;
   translatedTitle: string | null;
+  summary30s: string | null;
   shortSummary: string | null;
   whyItMatters: string | null;
+  keyInsight: string | null;
   keyPoints: string[];
   example: string | null;
   whenToUse: string | null;
+  audienceFor: string[];
+  audienceIgnore: string[];
   briefContent: string | null;
   originalUrl: string;
   imageUrl: string | null;
@@ -182,8 +186,12 @@ describe('EnrichmentsController integration', () => {
     expect(body.whyItMatters).not.toBeNull();
     expect(body.keyPoints.length).toBeGreaterThan(0);
     // novos campos editoriais (mock os preenche)
+    expect(body.summary30s).not.toBeNull();
+    expect(body.keyInsight).not.toBeNull();
     expect(body.example).not.toBeNull();
     expect(body.whenToUse).not.toBeNull();
+    expect(body.audienceFor.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.audienceIgnore)).toBe(true);
     expect(body.publishedAt).toBe('2099-09-15T10:00:00.000Z');
 
     const stored = await prisma.contentEnrichment.findMany({

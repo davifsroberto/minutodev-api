@@ -23,11 +23,15 @@ const input: EnrichContentInput = {
 
 const mockOutput: EnrichContentOutput = {
   translatedTitle: 'from-mock',
+  summary30s: '30s',
   shortSummary: 's',
   whyItMatters: 'w',
+  keyInsight: 'i',
   keyPoints: ['k'],
   example: 'e',
   whenToUse: 'u',
+  audienceFor: ['Backend'],
+  audienceIgnore: [],
   briefContent: 'b',
 };
 

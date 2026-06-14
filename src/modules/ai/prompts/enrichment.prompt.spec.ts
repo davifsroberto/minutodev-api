@@ -17,11 +17,15 @@ const baseInput: EnrichContentInput = {
 
 const validOutput = {
   translatedTitle: 'TypeScript 5.7 lançado',
+  summary30s: 'Saiu o TS 5.7. Builds mais rápidas. Vale para quem mantém TS.',
   shortSummary: 'Resumo curto.',
   whyItMatters: 'Importa porque melhora o compilador.',
+  keyInsight: 'O ganho real está no tempo de feedback do compilador.',
   keyPoints: ['Ponto 1', 'Ponto 2'],
   example: 'tsc --noEmit roda 20% mais rápido.',
   whenToUse: 'Vale a pena em monorepos grandes.',
+  audienceFor: ['Backend', 'Ferramentas'],
+  audienceIgnore: ['Frontend puro'],
   briefContent: 'Conteúdo breve e original.',
 };
 
@@ -29,18 +33,22 @@ describe('enrichment.prompt', () => {
   describe('ENRICHMENT_SYSTEM_PROMPT', () => {
     it('instrui pt-BR, conteúdo original e saída JSON para desenvolvedores', () => {
       expect(ENRICHMENT_SYSTEM_PROMPT).toContain('português do Brasil');
-      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/NÃO copie/);
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/copiar o artigo/i);
       expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/original/i);
       expect(ENRICHMENT_SYSTEM_PROMPT).toContain('desenvolvedores');
       expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/JSON/);
 
       for (const key of [
         'translatedTitle',
+        'summary30s',
         'shortSummary',
         'whyItMatters',
+        'keyInsight',
         'keyPoints',
         'example',
         'whenToUse',
+        'audienceFor',
+        'audienceIgnore',
         'briefContent',
       ]) {
         expect(ENRICHMENT_SYSTEM_PROMPT).toContain(key);
@@ -49,8 +57,10 @@ describe('enrichment.prompt', () => {
 
     it('pede fatos concretos e tradução natural (não literal)', () => {
       expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/concret/i);
-      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/não faça tradução literal/i);
-      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/sem abrir a fonte/i);
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(/não traduza literalmente/i);
+      expect(ENRICHMENT_SYSTEM_PROMPT).toMatch(
+        /sem (precisar )?abrir a fonte/i,
+      );
     });
   });
 
@@ -134,13 +144,32 @@ describe('enrichment.prompt', () => {
       expect(parseEnrichmentResponse(raw)).toEqual(validOutput);
     });
 
+    it('preserva crases triplas dentro de um valor, mesmo com cerca externa', () => {
+      const output = {
+        ...validOutput,
+        translatedTitle: 'Use ```ts const x``` aqui',
+      };
+      const raw = ['```json', JSON.stringify(output), '```'].join('\n');
+
+      expect(parseEnrichmentResponse(raw)).toEqual(output);
+    });
+
+    it('parseia JSON cru cujo valor contém crases triplas (sem cerca externa)', () => {
+      const output = {
+        ...validOutput,
+        example: 'rode ```bash npm i``` no terminal',
+      };
+
+      expect(parseEnrichmentResponse(JSON.stringify(output))).toEqual(output);
+    });
+
     it('descarta campos extras, retornando apenas o contrato', () => {
       const raw = JSON.stringify({ ...validOutput, extra: 'ignorado' });
 
       expect(parseEnrichmentResponse(raw)).toEqual(validOutput);
     });
 
-    it('aceita example/whenToUse ausentes, normalizando para null', () => {
+    it('aceita campos opcionais ausentes, normalizando para null/[]', () => {
       const raw = JSON.stringify({
         translatedTitle: 'x',
         shortSummary: 'y',
@@ -150,20 +179,40 @@ describe('enrichment.prompt', () => {
       });
 
       const parsed = parseEnrichmentResponse(raw);
+      expect(parsed.summary30s).toBeNull();
+      expect(parsed.keyInsight).toBeNull();
       expect(parsed.example).toBeNull();
       expect(parsed.whenToUse).toBeNull();
+      expect(parsed.audienceFor).toEqual([]);
+      expect(parsed.audienceIgnore).toEqual([]);
     });
 
-    it('normaliza example/whenToUse vazios ou "null" para null', () => {
+    it('normaliza campos de texto opcionais vazios ou "null" para null', () => {
       const raw = JSON.stringify({
         ...validOutput,
-        example: '   ',
+        summary30s: 'null',
+        keyInsight: '   ',
+        example: '',
         whenToUse: 'null',
       });
 
       const parsed = parseEnrichmentResponse(raw);
+      expect(parsed.summary30s).toBeNull();
+      expect(parsed.keyInsight).toBeNull();
       expect(parsed.example).toBeNull();
       expect(parsed.whenToUse).toBeNull();
+    });
+
+    it('normaliza as listas de audiência (descarta não-strings e vazios)', () => {
+      const raw = JSON.stringify({
+        ...validOutput,
+        audienceFor: ['Backend', '  ', 42, 'Segurança'],
+        audienceIgnore: 'não é array',
+      });
+
+      const parsed = parseEnrichmentResponse(raw);
+      expect(parsed.audienceFor).toEqual(['Backend', 'Segurança']);
+      expect(parsed.audienceIgnore).toEqual([]);
     });
 
     it('lança para um JSON inválido', () => {
