@@ -22,6 +22,7 @@
       "@sharedLibs/*": ["../src/module/shared/*"],
       "@testInfra/*": ["../test/*"],
       "@src/*": ["../src/*"],
+      "@app/*": ["../src/app/*"],
       "@resource/*": ["../resource/*"]
     },
     "incremental": true,
