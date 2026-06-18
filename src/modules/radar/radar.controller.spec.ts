@@ -17,6 +17,7 @@ const createQuery = (overrides: Partial<RadarQueryDto> = {}): RadarQueryDto =>
 const createResponse = (): RadarResponseDto => ({
   date: '2026-06-13',
   estimatedReadTimeMinutes: 2,
+  featuredId: 'release-1',
   sections: [
     {
       key: 'releases',
@@ -27,6 +28,7 @@ const createResponse = (): RadarResponseDto => ({
           id: 'release-1',
           imageUrl: 'https://example.test/release-1.png',
           publishedAt: new Date('2026-06-13T09:00:00.000Z'),
+          sourceCount: 1,
           sourceName: 'Release Source',
           summary: 'A release summary.',
           title: 'Release 1',

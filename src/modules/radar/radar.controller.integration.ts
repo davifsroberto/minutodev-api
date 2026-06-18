@@ -5,6 +5,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import {
   ContentStatus,
   ContentType,
+  EnrichmentStatus,
   Prisma,
   PrismaClient,
   Source,
@@ -19,6 +20,7 @@ import { AppModule } from '../../app.module';
 import { configureBootstrapGlobals } from '../../bootstrap';
 import { ContentsService } from '../contents/contents.service';
 import { RadarService } from './radar.service';
+import { RelevanceService } from './relevance.service';
 
 expand(loadEnv());
 
@@ -32,6 +34,7 @@ type RadarItemResponse = {
   category: string | null;
   contentType: ContentType;
   publishedAt: string | null;
+  sourceCount: number;
 };
 
 type RadarSectionResponse = {
@@ -41,8 +44,9 @@ type RadarSectionResponse = {
 
 type RadarResponse = {
   date: string;
-  sections: RadarSectionResponse[];
   estimatedReadTimeMinutes: number;
+  featuredId: string | null;
+  sections: RadarSectionResponse[];
 };
 
 type ErrorEnvelope = {
@@ -59,6 +63,7 @@ const RADAR_ITEM_KEYS = [
   'id',
   'imageUrl',
   'publishedAt',
+  'sourceCount',
   'sourceName',
   'summary',
   'title',
@@ -118,6 +123,7 @@ describe('RadarController integration', () => {
   let previousCorsOrigins: string | undefined;
   let app: INestApplication;
   let source: Source;
+  let relatedSource: Source;
   const currentNow = new Date('2099-09-15T14:00:00.000Z');
 
   beforeAll(async () => {
@@ -126,13 +132,16 @@ describe('RadarController integration', () => {
     })
       .overrideProvider(RadarService)
       .useFactory({
-        factory: (contentsService: ContentsService) => {
-          const service = new RadarService(contentsService);
+        factory: (
+          contentsService: ContentsService,
+          relevanceService: RelevanceService,
+        ) => {
+          const service = new RadarService(contentsService, relevanceService);
           service.setNowProvider(() => currentNow);
 
           return service;
         },
-        inject: [ContentsService],
+        inject: [ContentsService, RelevanceService],
       })
       .compile();
 
@@ -157,6 +166,14 @@ describe('RadarController integration', () => {
         type: SourceType.RSS,
         url: `https://example.test/${runId}/radar-source`,
         category: `radar-${runId}`,
+      },
+    });
+    relatedSource = await prisma.source.create({
+      data: {
+        name: `Related Radar Source ${runId}`,
+        type: SourceType.RSS,
+        url: `https://example.test/${runId}/related-radar-source`,
+        category: 'ai',
       },
     });
 
@@ -205,17 +222,29 @@ describe('RadarController integration', () => {
         contentType: ContentType.TOOL,
         category: null,
         status: ContentStatus.NEW,
-        publishedAt: sameDay(10),
-        collectedAt: sameDay(10),
+        publishedAt: sameDay(9),
+        collectedAt: sameDay(9),
       }),
       // trends — pure ai / community categories on articles
-      createContentData(source, runId, 'trend ai', {
+      createContentData(source, runId, 'Node.js 22 runtime released', {
         contentType: ContentType.ARTICLE,
         category: 'ai',
         status: ContentStatus.NEW,
         publishedAt: sameDay(8),
         collectedAt: sameDay(8),
       }),
+      createContentData(
+        relatedSource,
+        runId,
+        'Node.js 22 runtime released today',
+        {
+          contentType: ContentType.ARTICLE,
+          category: 'ai',
+          status: ContentStatus.NEW,
+          publishedAt: new Date('2099-09-15T07:30:00.000Z'),
+          collectedAt: new Date('2099-09-15T07:30:00.000Z'),
+        },
+      ),
       createContentData(source, runId, 'trend community', {
         contentType: ContentType.ARTICLE,
         category: 'community',
@@ -270,13 +299,36 @@ describe('RadarController integration', () => {
       }),
     ];
 
-    await Promise.all(rows.map((data) => prisma.content.create({ data })));
+    const createdRows = await Promise.all(
+      rows.map((data) => prisma.content.create({ data })),
+    );
+    const enrichedRelease = createdRows.find(
+      (row) => row.title === 'release older',
+    );
+
+    if (enrichedRelease === undefined) {
+      throw new Error('Missing enriched release fixture');
+    }
+
+    await prisma.contentEnrichment.create({
+      data: {
+        audienceFor: [],
+        audienceIgnore: [],
+        contentId: enrichedRelease.id,
+        keyPoints: [],
+        language: 'pt-BR',
+        originalUrl: enrichedRelease.url,
+        status: EnrichmentStatus.COMPLETED,
+      },
+    });
   });
 
   afterAll(async () => {
     await prisma.source.deleteMany({
       where: {
-        url: `https://example.test/${runId}/radar-source`,
+        url: {
+          startsWith: `https://example.test/${runId}/`,
+        },
       },
     });
     await prisma.$disconnect();
@@ -327,11 +379,11 @@ describe('RadarController integration', () => {
       'recommended',
     ]);
 
-    // RELEASE + 'engineering' lands in releases, not trends (dedup); ordering
-    // is newest-first by publishedAt.
+    // RELEASE + 'engineering' lands in releases, not trends (dedup). The
+    // enriched older release outranks the newer non-enriched release.
     expect(titlesOf(sectionByKey(body, 'releases'))).toEqual([
-      'release newest',
       'release older',
+      'release newest',
     ]);
     // TOOL + 'ai' stays in tools (dedup); 'opensource' on an ARTICLE is tools.
     expect(titlesOf(sectionByKey(body, 'tools'))).toEqual([
@@ -340,7 +392,8 @@ describe('RadarController integration', () => {
       'tool extra',
     ]);
     expect(titlesOf(sectionByKey(body, 'trends'))).toEqual([
-      'trend ai',
+      'Node.js 22 runtime released',
+      'Node.js 22 runtime released today',
       'trend community',
     ]);
     expect(titlesOf(sectionByKey(body, 'recommended'))).toEqual([
@@ -351,7 +404,13 @@ describe('RadarController integration', () => {
 
   it('maps each item to the trimmed card contract with a flattened sourceName', async () => {
     const body = await getRadar();
-    const [release] = sectionByKey(body, 'releases').items;
+    const release = sectionByKey(body, 'releases').items.find(
+      (item) => item.title === 'release newest',
+    );
+
+    if (release === undefined) {
+      throw new Error('Missing release fixture in radar response');
+    }
 
     expect(Object.keys(release).sort()).toEqual(RADAR_ITEM_KEYS);
     expect(release).toEqual(
@@ -361,9 +420,24 @@ describe('RadarController integration', () => {
         imageUrl: 'https://cdn.example.test/release-newest.png',
         category: 'engineering',
         contentType: ContentType.RELEASE,
+        sourceCount: 1,
         summary: null,
       }),
     );
+  });
+
+  it('returns featuredId inside the response and sourceCount from distinct topic sources', async () => {
+    const body = await getRadar();
+    const items = body.sections.flatMap((section) => section.items);
+    const coveredItems = items.filter((item) =>
+      item.title.startsWith('Node.js 22 runtime released'),
+    );
+
+    expect(body.featuredId).not.toBeNull();
+    expect(items.some((item) => item.id === body.featuredId)).toBe(true);
+    expect(coveredItems).toHaveLength(2);
+    expect(coveredItems.map((item) => item.sourceCount)).toEqual([2, 2]);
+    expect(items.every((item) => item.sourceCount >= 1)).toBe(true);
   });
 
   it('excludes HIDDEN and ARCHIVED content from every section', async () => {
@@ -391,8 +465,8 @@ describe('RadarController integration', () => {
   it('caps estimatedReadTimeMinutes at 15 for the full briefing', async () => {
     const body = await getRadar();
 
-    // 9 eligible items -> 2 × 9 = 18, capped at 15.
-    expect(allTitles(body)).toHaveLength(9);
+    // 10 eligible items -> 2 × 10 = 20, capped at 15.
+    expect(allTitles(body)).toHaveLength(10);
     expect(body.estimatedReadTimeMinutes).toBe(15);
   });
 

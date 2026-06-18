@@ -41,6 +41,13 @@ export class RadarItemDto {
   sourceName!: string;
 
   @ApiProperty({
+    example: 3,
+    minimum: 1,
+    type: Number,
+  })
+  sourceCount!: number;
+
+  @ApiProperty({
     description:
       'Imagem de capa do conteúdo (RSS ou og:image). Nula quando indisponível — o cliente cai no placeholder.',
     example: 'https://devblogs.microsoft.com/typescript/cover.png',
@@ -91,6 +98,13 @@ export class RadarResponseDto {
     example: '2026-06-13',
   })
   date!: string;
+
+  @ApiProperty({
+    example: '9b7a1d8f-0e81-4f1a-b630-897fa7d40353',
+    nullable: true,
+    type: String,
+  })
+  featuredId!: string | null;
 
   @ApiProperty({
     isArray: true,

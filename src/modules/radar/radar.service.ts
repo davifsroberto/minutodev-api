@@ -15,6 +15,12 @@ import {
   RadarSectionDto,
   RadarSectionKey,
 } from './dto/radar-response.dto';
+import {
+  compareRelevanceCandidates,
+  RelevanceRanking,
+  RelevanceService,
+  RelevanceSignal,
+} from './relevance.service';
 
 export const RADAR_MAX_DAILY_ITEMS = 500;
 
@@ -28,19 +34,32 @@ export class RadarService {
   private readonly logger = new Logger(RadarService.name);
   private now: () => Date = () => new Date();
 
-  constructor(private readonly contents: ContentsService) {}
+  constructor(
+    private readonly contents: ContentsService,
+    private readonly relevance: RelevanceService,
+  ) {}
 
   setNowProvider(now: () => Date): void {
     this.now = now;
   }
 
   async getToday(query: RadarQueryDto): Promise<RadarResponseDto> {
-    const requestedDay = this.resolveDay(query.date);
+    const now = this.now();
+    const requestedDay = this.resolveDay(query.date, now);
     const { day, items } = await this.resolveBriefing(requestedDay);
+    const translations = await this.contents.findReadyTranslations(
+      items.map((item) => item.id),
+    );
+    const ranking = this.relevance.rank(
+      items,
+      new Set(translations.keys()),
+      now,
+    );
 
-    const buckets = this.assignSections(items);
-    const sections = await this.localizeSections(
-      this.buildSections(buckets, query.limitPerSection),
+    const buckets = this.sortBuckets(this.assignSections(items), ranking);
+    const sections = this.localizeSections(
+      this.buildSections(buckets, ranking, query.limitPerSection),
+      translations,
     );
     const totalItems = sections.reduce(
       (total, section) => total + section.items.length,
@@ -50,21 +69,15 @@ export class RadarService {
     return {
       date: this.formatDay(day),
       estimatedReadTimeMinutes: Math.min(15, totalItems * 2),
+      featuredId: this.resolveFeaturedId(ranking.featuredId, sections),
       sections,
     };
   }
 
-  /**
-   * Substitui título/resumo pelo texto pt-BR quando já existe enrichment pronto
-   * (reuso, sem disparar IA). Conteúdos sem tradução mantêm o texto do feed.
-   */
-  private async localizeSections(
+  private localizeSections(
     sections: RadarSectionDto[],
-  ): Promise<RadarSectionDto[]> {
-    const ids = sections.flatMap((section) =>
-      section.items.map((item) => item.id),
-    );
-    const translations = await this.contents.findReadyTranslations(ids);
+    translations: Map<string, ContentTranslation>,
+  ): RadarSectionDto[] {
     if (translations.size === 0) return sections;
 
     return sections.map((section) => ({
@@ -120,12 +133,12 @@ export class RadarService {
     return items;
   }
 
-  private resolveDay(date?: string): Date {
+  private resolveDay(date: string | undefined, now: Date): Date {
     if (date !== undefined) {
       return startOfUtcDay(new Date(`${date}T00:00:00.000Z`));
     }
 
-    return startOfUtcDay(this.now());
+    return startOfUtcDay(now);
   }
 
   private assignSections(items: RadarContent[]): SectionBuckets {
@@ -164,28 +177,75 @@ export class RadarService {
 
   private buildSections(
     buckets: SectionBuckets,
+    ranking: RelevanceRanking,
     limitPerSection: number,
   ): RadarSectionDto[] {
     return RADAR_SECTION_KEYS.map((key) => ({
       key,
       items: buckets[key]
         .slice(0, limitPerSection)
-        .map((item) => this.toRadarItem(item)),
+        .map((item) => this.toRadarItem(item, ranking.signals.get(item.id))),
     }));
   }
 
-  private toRadarItem(item: RadarContent): RadarItemDto {
+  private sortBuckets(
+    buckets: SectionBuckets,
+    ranking: RelevanceRanking,
+  ): SectionBuckets {
+    return Object.fromEntries(
+      RADAR_SECTION_KEYS.map((key) => [
+        key,
+        buckets[key].sort((left, right) =>
+          compareRelevanceCandidates(
+            {
+              item: left,
+              signal: ranking.signals.get(left.id) ?? {
+                score: 0,
+                sourceCount: 1,
+              },
+            },
+            {
+              item: right,
+              signal: ranking.signals.get(right.id) ?? {
+                score: 0,
+                sourceCount: 1,
+              },
+            },
+          ),
+        ),
+      ]),
+    ) as SectionBuckets;
+  }
+
+  private toRadarItem(
+    item: RadarContent,
+    signal?: RelevanceSignal,
+  ): RadarItemDto {
     return {
       category: item.category,
       contentType: item.contentType,
       id: item.id,
       imageUrl: item.imageUrl,
       publishedAt: item.publishedAt,
+      sourceCount: signal?.sourceCount ?? 1,
       sourceName: item.source.name,
       summary: item.summary,
       title: item.title,
       url: item.url,
     };
+  }
+
+  private resolveFeaturedId(
+    featuredId: string | null,
+    sections: RadarSectionDto[],
+  ): string | null {
+    if (featuredId === null) return null;
+
+    const isPresent = sections.some((section) =>
+      section.items.some((item) => item.id === featuredId),
+    );
+
+    return isPresent ? featuredId : null;
   }
 
   private formatDay(day: Date): string {

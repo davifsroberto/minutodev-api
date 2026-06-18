@@ -14,6 +14,7 @@ import {
 } from '../contents/contents.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import { RADAR_MAX_DAILY_ITEMS, RadarService } from './radar.service';
+import { RelevanceService } from './relevance.service';
 
 type RadarContent = Content & { source: Source };
 type ContentsServiceMock = Pick<
@@ -76,6 +77,7 @@ describe('RadarService', () => {
       [string[]]
     >;
   };
+  let relevance: RelevanceService;
   let service: RadarService;
 
   beforeEach(() => {
@@ -89,8 +91,10 @@ describe('RadarService', () => {
     };
     contents.findMostRecentEligibleDay.mockResolvedValue(null);
     contents.findReadyTranslations.mockResolvedValue(new Map());
+    relevance = new RelevanceService();
     service = new RadarService(
       contents as ContentsServiceMock as ContentsService,
+      relevance,
     );
   });
 
@@ -166,7 +170,7 @@ describe('RadarService', () => {
     });
   });
 
-  it('preserves input order within each section', async () => {
+  it('uses deterministic relevance order within each section', async () => {
     const sections = await sectionItems([
       createContent({ category: 'ai', id: 'trend-1' }),
       createContent({ category: 'engineering', id: 'trend-2' }),
@@ -178,6 +182,93 @@ describe('RadarService', () => {
       'trend-2',
       'trend-3',
     ]);
+  });
+
+  it('loads enrichment once for all candidates and reuses it for ranking and localization', async () => {
+    const now = new Date('2026-06-13T14:00:00.000Z');
+    const items = [
+      createContent({ category: 'ai', id: 'localized' }),
+      createContent({ category: 'ai', id: 'limited-out' }),
+    ];
+    contents.findEligibleForDay.mockResolvedValue(items);
+    contents.findReadyTranslations.mockResolvedValue(
+      new Map([
+        [
+          'localized',
+          {
+            translatedTitle: 'Título localizado',
+            shortSummary: null,
+            summary30s: null,
+          },
+        ],
+      ]),
+    );
+    service.setNowProvider(() => now);
+    const rank = jest.spyOn(relevance, 'rank');
+
+    const response = await service.getToday(
+      createQuery({ limitPerSection: 1 }),
+    );
+
+    expect(contents.findReadyTranslations).toHaveBeenCalledTimes(1);
+    expect(contents.findReadyTranslations).toHaveBeenCalledWith([
+      'localized',
+      'limited-out',
+    ]);
+    expect(rank).toHaveBeenCalledWith(items, new Set(['localized']), now);
+    expect(response.sections[2].items[0].title).toBe('Título localizado');
+  });
+
+  it('sorts by score before applying the section limit and keeps featuredId present', async () => {
+    const lower = createContent({
+      category: 'ai',
+      id: 'newer-lower-score',
+      publishedAt: new Date('2026-06-13T12:00:00.000Z'),
+    });
+    const higher = createContent({
+      category: 'ai',
+      id: 'older-higher-score',
+      publishedAt: new Date('2026-06-13T08:00:00.000Z'),
+    });
+    contents.findEligibleForDay.mockResolvedValue([lower, higher]);
+    jest.spyOn(relevance, 'rank').mockReturnValue({
+      featuredId: higher.id,
+      signals: new Map([
+        [lower.id, { score: 0.2, sourceCount: 1 }],
+        [higher.id, { score: 0.9, sourceCount: 3 }],
+      ]),
+    });
+
+    const response = await service.getToday(
+      createQuery({ limitPerSection: 1 }),
+    );
+
+    expect(response.sections[2].items).toEqual([
+      expect.objectContaining({
+        id: higher.id,
+        sourceCount: 3,
+      }),
+    ]);
+    expect(response.featuredId).toBe(higher.id);
+    expect(
+      response.sections.some((section) =>
+        section.items.some((item) => item.id === response.featuredId),
+      ),
+    ).toBe(true);
+  });
+
+  it('falls back to safe derived values when ranking omits a signal or a visible featured item', async () => {
+    const item = createContent({ category: 'ai', id: 'visible' });
+    contents.findEligibleForDay.mockResolvedValue([item]);
+    jest.spyOn(relevance, 'rank').mockReturnValue({
+      featuredId: 'missing',
+      signals: new Map(),
+    });
+
+    const response = await service.getToday(createQuery());
+
+    expect(response.sections[2].items[0].sourceCount).toBe(1);
+    expect(response.featuredId).toBeNull();
   });
 
   it('applies limitPerSection after assignment without affecting other sections', async () => {
@@ -375,6 +466,7 @@ describe('RadarService', () => {
       id: 'mapped-item',
       imageUrl: 'https://cdn.test/mapped.jpg',
       publishedAt: new Date('2026-06-13T11:00:00.000Z'),
+      sourceCount: 1,
       sourceName: 'Flattened Source',
       summary: 'Mapped summary',
       title: 'Content mapped-item',
