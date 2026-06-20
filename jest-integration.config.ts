@@ -1,4 +1,4 @@
-import config from './jest.config.ts';
+import config from './jest.config';
 
 config.testMatch = ['**/*.integration.ts'];
 

@@ -1,6 +1,8 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
+import cookieParser from 'cookie-parser';
+
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 // Allowlist vazia (CORS_ORIGINS ausente/vazia) é intencional: o boot não deve
@@ -28,9 +30,16 @@ export const configureBootstrapGlobals = (app: INestApplication): void => {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
 
+  // Necessário para a JwtStrategy ler o JWT de sessão do cookie httpOnly.
+  app.use(cookieParser());
+
+  // POST entra por causa do /auth/logout; credentials:true permite o envio do
+  // cookie de sessão em requisições cross-origin (XHR do front). Com credentials
+  // o origin nunca pode ser '*', daí a allowlist explícita continuar valendo.
   app.enableCors({
     origin: parseCorsOrigins(process.env.CORS_ORIGINS),
-    methods: ['GET'],
+    methods: ['GET', 'POST'],
+    credentials: true,
   });
 
   const swaggerConfig = new DocumentBuilder()

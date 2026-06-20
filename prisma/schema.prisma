@@ -42,6 +42,12 @@ enum EnrichmentStatus {
   FAILED
 }
 
+/// Provedor de identidade usado na autenticação. Apenas GOOGLE nesta fase; o
+/// enum reserva espaço para futuros provedores sem reabrir o modelo.
+enum AuthProvider {
+  GOOGLE
+}
+
 /// Fonte de conteúdo (feed RSS, repositório GitHub, etc.).
 model Source {
   id        String     @id @default(uuid())
@@ -119,4 +125,21 @@ model ContentEnrichment {
 
   @@unique([contentId, language])
   @@map("content_enrichments")
+}
+
+/// Usuário autenticado da plataforma. Base para a personalização da V2
+/// (interesses, favoritos, histórico). Identidade externa fica em
+/// (provider, providerId); `email` é único para uma conta por e-mail.
+model User {
+  id         String       @id @default(uuid())
+  email      String       @unique
+  name       String
+  avatarUrl  String?
+  provider   AuthProvider
+  providerId String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([provider, providerId])
+  @@map("users")
 }
