@@ -4,6 +4,8 @@ import { PrismaClient, SourceType } from '@prisma/client';
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
 
+import { INTEREST_TOPICS } from '../src/modules/interests/interests.catalog';
+
 // Garante DATABASE_URL ao rodar o seed isoladamente (`npm run prisma:seed`).
 expand(loadEnv());
 
@@ -64,7 +66,19 @@ async function main(): Promise<void> {
     });
   }
 
-  console.log(`Seed concluído: ${initialSources.length} fontes garantidas.`);
+  // Catálogo de temas de interesse (Sprint 11). Idempotente por slug; mantém o
+  // label atualizado sem duplicar temas em execuções repetidas.
+  for (const topic of INTEREST_TOPICS) {
+    await prisma.topic.upsert({
+      where: { slug: topic.slug },
+      update: { label: topic.label },
+      create: { slug: topic.slug, label: topic.label },
+    });
+  }
+
+  console.log(
+    `Seed concluído: ${initialSources.length} fontes e ${INTEREST_TOPICS.length} temas garantidos.`,
+  );
 }
 
 main()

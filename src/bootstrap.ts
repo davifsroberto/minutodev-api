@@ -33,12 +33,13 @@ export const configureBootstrapGlobals = (app: INestApplication): void => {
   // Necessário para a JwtStrategy ler o JWT de sessão do cookie httpOnly.
   app.use(cookieParser());
 
-  // POST entra por causa do /auth/logout; credentials:true permite o envio do
-  // cookie de sessão em requisições cross-origin (XHR do front). Com credentials
-  // o origin nunca pode ser '*', daí a allowlist explícita continuar valendo.
+  // POST entra por causa do /auth/logout; PUT por causa do /me/interests;
+  // credentials:true permite o envio do cookie de sessão em requisições
+  // cross-origin (XHR do front). Com credentials o origin nunca pode ser '*',
+  // daí a allowlist explícita continuar valendo.
   app.enableCors({
     origin: parseCorsOrigins(process.env.CORS_ORIGINS),
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT'],
     credentials: true,
   });
 
