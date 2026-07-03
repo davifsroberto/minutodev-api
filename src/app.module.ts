@@ -7,6 +7,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContentsModule } from './modules/contents/contents.module';
 import { EnrichmentsModule } from './modules/enrichments/enrichments.module';
+import { HistoryModule } from './modules/history/history.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { InterestsModule } from './modules/interests/interests.module';
 import { RadarModule } from './modules/radar/radar.module';
@@ -25,6 +26,7 @@ import { UsersModule } from './modules/users/users.module';
     UsersModule,
     AuthModule,
     InterestsModule,
+    HistoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
