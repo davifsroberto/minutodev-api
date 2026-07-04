@@ -119,3 +119,19 @@ export class RadarResponseDto {
   })
   estimatedReadTimeMinutes!: number;
 }
+
+export class RadarForYouResponseDto extends RadarResponseDto {
+  @ApiProperty({
+    description:
+      'True when the ranking was boosted by the user interests. The raw score is never exposed.',
+    example: true,
+  })
+  personalized!: boolean;
+
+  @ApiProperty({
+    description:
+      'True when the briefing degraded to the general ranking (no interests configured or failure loading them).',
+    example: false,
+  })
+  personalizationFallback!: boolean;
+}

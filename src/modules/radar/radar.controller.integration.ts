@@ -1,8 +1,10 @@
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
+  AuthProvider,
   ContentStatus,
   ContentType,
   EnrichmentStatus,
@@ -18,7 +20,9 @@ import request from 'supertest';
 
 import { AppModule } from '../../app.module';
 import { configureBootstrapGlobals } from '../../bootstrap';
+import { AUTH_COOKIE_NAME } from '../auth/auth.config';
 import { ContentsService } from '../contents/contents.service';
+import { InterestsService } from '../interests/interests.service';
 import { RadarService } from './radar.service';
 import { RelevanceService } from './relevance.service';
 
@@ -47,6 +51,11 @@ type RadarResponse = {
   estimatedReadTimeMinutes: number;
   featuredId: string | null;
   sections: RadarSectionResponse[];
+};
+
+type RadarForYouResponse = RadarResponse & {
+  personalized: boolean;
+  personalizationFallback: boolean;
 };
 
 type ErrorEnvelope = {
@@ -124,6 +133,10 @@ describe('RadarController integration', () => {
   let app: INestApplication;
   let source: Source;
   let relatedSource: Source;
+  let cookieWithInterests: string;
+  let cookieWithoutInterests: string;
+  const emailWithInterests = `${runId}-with-interests@example.test`;
+  const emailWithoutInterests = `${runId}-without-interests@example.test`;
   const currentNow = new Date('2099-09-15T14:00:00.000Z');
 
   beforeAll(async () => {
@@ -135,13 +148,18 @@ describe('RadarController integration', () => {
         factory: (
           contentsService: ContentsService,
           relevanceService: RelevanceService,
+          interestsService: InterestsService,
         ) => {
-          const service = new RadarService(contentsService, relevanceService);
+          const service = new RadarService(
+            contentsService,
+            relevanceService,
+            interestsService,
+          );
           service.setNowProvider(() => currentNow);
 
           return service;
         },
-        inject: [ContentsService, RelevanceService],
+        inject: [ContentsService, RelevanceService, InterestsService],
       })
       .compile();
 
@@ -321,6 +339,42 @@ describe('RadarController integration', () => {
         status: EnrichmentStatus.COMPLETED,
       },
     });
+
+    // Usuários do for-you: um com interesse em 'community' (categoria da
+    // fixture 'trend community') e outro sem interesses, para o fallback.
+    // Upsert porque 'community' é tema canônico do catálogo (pode já ter sido
+    // semeado); por isso ele também não é apagado no afterAll.
+    await prisma.user.deleteMany({
+      where: { email: { in: [emailWithInterests, emailWithoutInterests] } },
+    });
+    const communityTopic = await prisma.topic.upsert({
+      where: { slug: 'community' },
+      update: {},
+      create: { slug: 'community', label: 'Comunidade' },
+    });
+    const userWithInterests = await prisma.user.create({
+      data: {
+        email: emailWithInterests,
+        name: 'Radar Personalizado Integração',
+        avatarUrl: null,
+        provider: AuthProvider.GOOGLE,
+        providerId: `${runId}-with-interests`,
+        interests: { create: { topicId: communityTopic.id } },
+      },
+    });
+    const userWithoutInterests = await prisma.user.create({
+      data: {
+        email: emailWithoutInterests,
+        name: 'Radar Fallback Integração',
+        avatarUrl: null,
+        provider: AuthProvider.GOOGLE,
+        providerId: `${runId}-without-interests`,
+      },
+    });
+
+    const jwt = app.get(JwtService);
+    cookieWithInterests = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: userWithInterests.id })}`;
+    cookieWithoutInterests = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: userWithoutInterests.id })}`;
   });
 
   afterAll(async () => {
@@ -330,6 +384,10 @@ describe('RadarController integration', () => {
           startsWith: `https://example.test/${runId}/`,
         },
       },
+    });
+    // O delete em cascata remove os UserInterest; o Topic fica (é catálogo).
+    await prisma.user.deleteMany({
+      where: { email: { in: [emailWithInterests, emailWithoutInterests] } },
     });
     await prisma.$disconnect();
     await app.close();
@@ -534,5 +592,118 @@ describe('RadarController integration', () => {
     expect(response.headers['access-control-allow-origin']).not.toBe(
       disallowedOrigin,
     );
+  });
+
+  describe('GET /radar/for-you', () => {
+    const getForYou = async (
+      cookie: string,
+      query = '',
+    ): Promise<RadarForYouResponse> => {
+      const response = await request(app.getHttpServer())
+        .get(`/radar/for-you${query}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      return response.body as RadarForYouResponse;
+    };
+
+    it('rejects anonymous requests with the 401 envelope', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/radar/for-you')
+        .expect(401);
+
+      expectErrorEnvelope(
+        response.body as ErrorEnvelope,
+        401,
+        'UNAUTHORIZED',
+        '/radar/for-you',
+      );
+    });
+
+    it('boosts interest matches inside the section and in the featured slot', async () => {
+      const general = await getRadar();
+      const body = await getForYou(cookieWithInterests);
+      const communityTrend = body.sections
+        .flatMap((section) => section.items)
+        .find((item) => item.title === 'trend community');
+
+      expect(body.personalized).toBe(true);
+      expect(body.personalizationFallback).toBe(false);
+
+      // 'trend community' perde para os itens de IA no ranking editorial; com
+      // o interesse em 'community' ele lidera a seção e assume o destaque.
+      expect(titlesOf(sectionByKey(body, 'trends'))).toEqual([
+        'trend community',
+        'Node.js 22 runtime released',
+        'Node.js 22 runtime released today',
+      ]);
+      expect(body.featuredId).toBe(communityTrend?.id);
+      expect(body.featuredId).not.toBe(general.featuredId);
+    });
+
+    it('only re-ranks: same items, same section order, nothing hidden', async () => {
+      const general = await getRadar();
+      const body = await getForYou(cookieWithInterests);
+
+      expect(body.sections.map((section) => section.key)).toEqual([
+        'releases',
+        'tools',
+        'trends',
+        'recommended',
+      ]);
+      expect(allTitles(body).sort()).toEqual(allTitles(general).sort());
+      // Seções sem match de interesse mantêm a ordem editorial.
+      expect(titlesOf(sectionByKey(body, 'releases'))).toEqual(
+        titlesOf(sectionByKey(general, 'releases')),
+      );
+    });
+
+    it('keeps the trimmed card contract without exposing the raw score', async () => {
+      const body = await getForYou(cookieWithInterests);
+      const item = sectionByKey(body, 'trends').items[0];
+
+      expect(Object.keys(item).sort()).toEqual(RADAR_ITEM_KEYS);
+      expect(Object.keys(body).sort()).toEqual([
+        'date',
+        'estimatedReadTimeMinutes',
+        'featuredId',
+        'personalizationFallback',
+        'personalized',
+        'sections',
+      ]);
+    });
+
+    it('falls back to the general ranking for a user without interests', async () => {
+      const general = await getRadar();
+      const body = await getForYou(cookieWithoutInterests);
+
+      expect(body.personalized).toBe(false);
+      expect(body.personalizationFallback).toBe(true);
+      expect(body.featuredId).toBe(general.featuredId);
+      expect(body.sections).toEqual(general.sections);
+    });
+
+    it('honors the same query contract as the general radar', async () => {
+      const body = await getForYou(cookieWithInterests, '?limitPerSection=1');
+
+      for (const section of body.sections) {
+        expect(section.items.length).toBeLessThanOrEqual(1);
+      }
+      expect(titlesOf(sectionByKey(body, 'trends'))).toEqual([
+        'trend community',
+      ]);
+
+      const invalid = await request(app.getHttpServer())
+        .get('/radar/for-you?limitPerSection=0')
+        .set('Cookie', cookieWithInterests)
+        .expect(400);
+
+      expectErrorEnvelope(
+        invalid.body as ErrorEnvelope,
+        400,
+        'BAD_REQUEST',
+        '/radar/for-you?limitPerSection=0',
+      );
+    });
   });
 });

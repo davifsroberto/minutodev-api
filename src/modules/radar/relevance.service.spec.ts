@@ -12,6 +12,7 @@ import {
   COVERAGE_WEIGHT,
   DEFAULT_AUTHORITY_WEIGHT,
   ENRICHMENT_WEIGHT,
+  INTEREST_WEIGHT,
   RECENCY_HALF_LIFE_HOURS,
   RECENCY_WEIGHT,
   SOURCE_AUTHORITY_WEIGHTS,
@@ -20,6 +21,7 @@ import {
   calculateAuthorityScore,
   calculateCoverageScore,
   calculateEnrichmentScore,
+  calculateInterestScore,
   calculateRecencyScore,
   calculateRelevanceScore,
   compareRelevanceCandidates,
@@ -143,6 +145,45 @@ describe('relevance score components', () => {
         RECENCY_WEIGHT * 0.4,
     );
   });
+
+  it('matches interest by category or by any tag, and never on an empty set', () => {
+    const interests = new Set(['ai', 'cloud']);
+
+    expect(
+      calculateInterestScore({ category: 'ai', tags: [] }, interests),
+    ).toBe(1);
+    expect(
+      calculateInterestScore(
+        { category: 'backend', tags: ['cloud', 'devops'] },
+        interests,
+      ),
+    ).toBe(1);
+    expect(
+      calculateInterestScore({ category: 'backend', tags: [] }, interests),
+    ).toBe(0);
+    expect(
+      calculateInterestScore({ category: null, tags: [] }, interests),
+    ).toBe(0);
+    expect(
+      calculateInterestScore({ category: 'ai', tags: [] }, new Set()),
+    ).toBe(0);
+  });
+
+  it('adds the interest boost on top of the editorial score', () => {
+    const components = {
+      authority: 0.8,
+      coverage: 0.6,
+      enrichment: 1,
+      recency: 0.4,
+    };
+
+    expect(calculateRelevanceScore({ ...components, interest: 1 })).toBeCloseTo(
+      calculateRelevanceScore(components) + INTEREST_WEIGHT,
+    );
+    expect(calculateRelevanceScore({ ...components, interest: 0 })).toBe(
+      calculateRelevanceScore(components),
+    );
+  });
 });
 
 describe('RelevanceService', () => {
@@ -205,6 +246,55 @@ describe('RelevanceService', () => {
     expect(first.featuredId).toBe('a');
     expect([...first.signals]).toEqual([...second.signals]);
     expect(first.featuredId).toBe(second.featuredId);
+  });
+
+  describe('interest boost', () => {
+    // Gêmeos editoriais: mesma fonte, data e enrichment — só a categoria muda.
+    const twins = () => [
+      createContent({
+        category: 'backend',
+        id: 'editorial-twin',
+        title: 'Fastify 6 deep dive',
+      }),
+      createContent({
+        category: 'ai',
+        id: 'interest-twin',
+        title: 'Prompt engineering field notes',
+      }),
+    ];
+
+    it('breaks an editorial tie in favor of the interest match, including featured', () => {
+      const ranking = service.rank(twins(), new Set(), NOW, new Set(['ai']));
+
+      const interested = ranking.signals.get('interest-twin');
+      const plain = ranking.signals.get('editorial-twin');
+
+      expect(interested?.score).toBeCloseTo(
+        (plain?.score ?? 0) + INTEREST_WEIGHT,
+      );
+      expect(ranking.featuredId).toBe('interest-twin');
+    });
+
+    it('without interests the ranking is identical to the editorial one', () => {
+      const editorial = service.rank(twins(), new Set(), NOW);
+      const omitted = service.rank(twins(), new Set(), NOW, undefined);
+      const empty = service.rank(twins(), new Set(), NOW, new Set());
+
+      expect([...omitted.signals]).toEqual([...editorial.signals]);
+      expect([...empty.signals]).toEqual([...editorial.signals]);
+      expect(omitted.featuredId).toBe(editorial.featuredId);
+      expect(empty.featuredId).toBe(editorial.featuredId);
+    });
+
+    it('boosts without hiding: non-matching items keep their signals', () => {
+      const ranking = service.rank(twins(), new Set(), NOW, new Set(['ai']));
+      const editorial = service.rank(twins(), new Set(), NOW);
+
+      expect(ranking.signals.size).toBe(2);
+      expect(ranking.signals.get('editorial-twin')?.score).toBeCloseTo(
+        editorial.signals.get('editorial-twin')?.score ?? -1,
+      );
+    });
   });
 });
 

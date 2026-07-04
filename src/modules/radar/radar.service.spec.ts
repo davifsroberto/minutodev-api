@@ -12,6 +12,7 @@ import {
   ContentsService,
   ContentTranslation,
 } from '../contents/contents.service';
+import { InterestsService } from '../interests/interests.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import { RADAR_MAX_DAILY_ITEMS, RadarService } from './radar.service';
 import { RelevanceService } from './relevance.service';
@@ -21,6 +22,7 @@ type ContentsServiceMock = Pick<
   ContentsService,
   'findEligibleForDay' | 'findMostRecentEligibleDay' | 'findReadyTranslations'
 >;
+type InterestsServiceMock = Pick<InterestsService, 'getForUser'>;
 
 const createSource = (overrides: Partial<Source> = {}): Source => ({
   category: 'engineering',
@@ -78,6 +80,7 @@ describe('RadarService', () => {
     >;
   };
   let relevance: RelevanceService;
+  let interests: { getForUser: jest.Mock<Promise<string[]>, [string]> };
   let service: RadarService;
 
   beforeEach(() => {
@@ -92,9 +95,12 @@ describe('RadarService', () => {
     contents.findMostRecentEligibleDay.mockResolvedValue(null);
     contents.findReadyTranslations.mockResolvedValue(new Map());
     relevance = new RelevanceService();
+    interests = { getForUser: jest.fn<Promise<string[]>, [string]>() };
+    interests.getForUser.mockResolvedValue([]);
     service = new RadarService(
       contents as ContentsServiceMock as ContentsService,
       relevance,
+      interests as InterestsServiceMock as InterestsService,
     );
   });
 
@@ -215,7 +221,13 @@ describe('RadarService', () => {
       'localized',
       'limited-out',
     ]);
-    expect(rank).toHaveBeenCalledWith(items, new Set(['localized']), now);
+    // O 4º argumento (interesses) é sempre undefined no radar geral.
+    expect(rank).toHaveBeenCalledWith(
+      items,
+      new Set(['localized']),
+      now,
+      undefined,
+    );
     expect(response.sections[2].items[0].title).toBe('Título localizado');
   });
 
@@ -544,5 +556,118 @@ describe('RadarService', () => {
     // sem translatedTitle, mantém o título original; resumo cai no summary30s
     expect(item?.title).toBe('Raw Title');
     expect(item?.summary).toBe('Resumo de 30 segundos');
+  });
+
+  describe('getForYou', () => {
+    const userId = 'user-1';
+
+    // Gêmeos editoriais na mesma seção (trends): só o interesse desempata.
+    const twins = () => [
+      createContent({ category: 'engineering', id: 'twin-engineering' }),
+      createContent({ category: 'ai', id: 'twin-ai' }),
+    ];
+
+    it('re-ranks items inside the section and the featured by interest, flagging personalized', async () => {
+      contents.findEligibleForDay.mockResolvedValue(twins());
+      // 'twin-engineering' perde o desempate por id no ranking geral; só o
+      // boost de interesse pode colocá-lo na frente — o teste falha se o boost
+      // não for aplicado.
+      interests.getForUser.mockResolvedValue(['engineering']);
+
+      const response = await service.getForYou(userId, createQuery());
+      const trends = response.sections.find(
+        (section) => section.key === 'trends',
+      );
+
+      expect(interests.getForUser).toHaveBeenCalledWith(userId);
+      expect(trends?.items.map((item) => item.id)).toEqual([
+        'twin-engineering',
+        'twin-ai',
+      ]);
+      expect(response.featuredId).toBe('twin-engineering');
+      expect(response.personalized).toBe(true);
+      expect(response.personalizationFallback).toBe(false);
+    });
+
+    it('keeps section order fixed and hides nothing (boost only)', async () => {
+      contents.findEligibleForDay.mockResolvedValue([
+        ...twins(),
+        createContent({
+          contentType: ContentType.RELEASE,
+          id: 'release-plain',
+        }),
+        createContent({ category: null, id: 'recommended-plain' }),
+      ]);
+      interests.getForUser.mockResolvedValue(['ai']);
+
+      const response = await service.getForYou(userId, createQuery());
+
+      expect(response.sections.map((section) => section.key)).toEqual([
+        'releases',
+        'tools',
+        'trends',
+        'recommended',
+      ]);
+      expect(
+        response.sections.flatMap((section) =>
+          section.items.map((item) => item.id),
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          'twin-ai',
+          'twin-engineering',
+          'release-plain',
+          'recommended-plain',
+        ]),
+      );
+    });
+
+    it('degrades to the general ranking when the user has no interests', async () => {
+      contents.findEligibleForDay.mockResolvedValue(twins());
+      interests.getForUser.mockResolvedValue([]);
+      const rank = jest.spyOn(relevance, 'rank');
+
+      const forYou = await service.getForYou(userId, createQuery());
+      const general = await service.getToday(createQuery());
+
+      expect(forYou.personalized).toBe(false);
+      expect(forYou.personalizationFallback).toBe(true);
+      expect(forYou.sections).toEqual(general.sections);
+      expect(forYou.featuredId).toBe(general.featuredId);
+      expect(rank).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.anything(),
+        expect.any(Date),
+        undefined,
+      );
+    });
+
+    it('degrades to the general ranking when loading interests fails', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      contents.findEligibleForDay.mockResolvedValue(twins());
+      interests.getForUser.mockRejectedValue(new Error('db offline'));
+
+      const response = await service.getForYou(userId, createQuery());
+
+      expect(response.personalized).toBe(false);
+      expect(response.personalizationFallback).toBe(true);
+      expect(response.sections.some((section) => section.items.length)).toBe(
+        true,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to load interests'),
+      );
+    });
+
+    it('does not touch interests on the public getToday path', async () => {
+      contents.findEligibleForDay.mockResolvedValue(twins());
+
+      const response = await service.getToday(createQuery());
+
+      expect(interests.getForUser).not.toHaveBeenCalled();
+      expect(response).not.toHaveProperty('personalized');
+      expect(response).not.toHaveProperty('personalizationFallback');
+    });
   });
 });

@@ -2,13 +2,21 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { ContentType } from '@prisma/client';
 
+import { AuthenticatedUser } from '../auth/auth.types';
 import { RadarQueryDto } from './dto/radar-query.dto';
-import { RadarResponseDto } from './dto/radar-response.dto';
+import {
+  RadarForYouResponseDto,
+  RadarResponseDto,
+} from './dto/radar-response.dto';
 import { RadarController } from './radar.controller';
 import { RadarService } from './radar.service';
 
 type RadarServiceMock = {
   getToday: jest.Mock<Promise<RadarResponseDto>, [RadarQueryDto]>;
+  getForYou: jest.Mock<
+    Promise<RadarForYouResponseDto>,
+    [string, RadarQueryDto]
+  >;
 };
 
 const createQuery = (overrides: Partial<RadarQueryDto> = {}): RadarQueryDto =>
@@ -42,12 +50,19 @@ const createResponse = (): RadarResponseDto => ({
   ],
 });
 
+const createUser = (): AuthenticatedUser =>
+  ({ id: 'user-1' }) as AuthenticatedUser;
+
 describe('RadarController', () => {
   let controller: RadarController;
   let service: RadarServiceMock;
 
   beforeEach(async () => {
     service = {
+      getForYou: jest.fn<
+        Promise<RadarForYouResponseDto>,
+        [string, RadarQueryDto]
+      >(),
       getToday: jest.fn<Promise<RadarResponseDto>, [RadarQueryDto]>(),
     };
 
@@ -88,5 +103,21 @@ describe('RadarController', () => {
         limitPerSection: 7,
       }),
     );
+  });
+
+  it('delegates for-you to getForYou with the authenticated user id and query', async () => {
+    const query = createQuery({ limitPerSection: 6 });
+    const response: RadarForYouResponseDto = {
+      ...createResponse(),
+      personalized: true,
+      personalizationFallback: false,
+    };
+    service.getForYou.mockResolvedValue(response);
+
+    await expect(controller.getForYou(createUser(), query)).resolves.toBe(
+      response,
+    );
+    expect(service.getForYou).toHaveBeenCalledWith('user-1', query);
+    expect(service.getToday).not.toHaveBeenCalled();
   });
 });

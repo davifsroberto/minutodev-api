@@ -8,6 +8,7 @@ import {
   COVERAGE_WEIGHT,
   DEFAULT_AUTHORITY_WEIGHT,
   ENRICHMENT_WEIGHT,
+  INTEREST_WEIGHT,
   RECENCY_HALF_LIFE_HOURS,
   RECENCY_WEIGHT,
   SOURCE_AUTHORITY_WEIGHTS,
@@ -33,6 +34,8 @@ export interface RelevanceComponents {
   authority: number;
   coverage: number;
   enrichment: number;
+  /** Sinal do radar personalizado; ausente/0 mantém o score editorial puro. */
+  interest?: number;
 }
 
 export interface RelevanceCandidate {
@@ -65,16 +68,30 @@ export const calculateEnrichmentScore = (
   enrichedIds: ReadonlySet<string>,
 ): number => (enrichedIds.has(id) ? 1 : 0);
 
+// Binário de propósito: `category` é único por conteúdo, então "casou um
+// interesse" já é o sinal inteiro. `tags` está sempre vazio na ingestão atual
+// e entra aqui como sinal futuro, sem custo hoje.
+export const calculateInterestScore = (
+  item: Pick<Content, 'category' | 'tags'>,
+  interestSlugs: ReadonlySet<string>,
+): number => {
+  if (item.category !== null && interestSlugs.has(item.category)) return 1;
+
+  return item.tags.some((tag) => interestSlugs.has(tag)) ? 1 : 0;
+};
+
 export const calculateRelevanceScore = ({
   recency,
   authority,
   coverage,
   enrichment,
+  interest = 0,
 }: RelevanceComponents): number =>
   RECENCY_WEIGHT * recency +
   AUTHORITY_WEIGHT * authority +
   COVERAGE_WEIGHT * coverage +
-  ENRICHMENT_WEIGHT * enrichment;
+  ENRICHMENT_WEIGHT * enrichment +
+  INTEREST_WEIGHT * interest;
 
 export const compareRelevanceCandidates = (
   left: RelevanceCandidate,
@@ -107,6 +124,7 @@ export interface RelevanceService {
     items: readonly RadarContent[],
     enrichedIds: ReadonlySet<string>,
     now: Date,
+    interestSlugs?: ReadonlySet<string>,
   ): RelevanceRanking;
 }
 
@@ -116,6 +134,7 @@ class RelevanceServiceProvider implements RelevanceService {
     items: readonly RadarContent[],
     enrichedIds: ReadonlySet<string>,
     now: Date,
+    interestSlugs?: ReadonlySet<string>,
   ): RelevanceRanking {
     const sourceCounts = getSourceCountByItemId(items);
     const candidates = items.map((item): RelevanceCandidate => {
@@ -124,6 +143,10 @@ class RelevanceServiceProvider implements RelevanceService {
         authority: calculateAuthorityScore(item.source.name),
         coverage: calculateCoverageScore(sourceCount),
         enrichment: calculateEnrichmentScore(item.id, enrichedIds),
+        interest:
+          interestSlugs === undefined
+            ? 0
+            : calculateInterestScore(item, interestSlugs),
         recency: calculateRecencyScore(item.publishedAt, item.collectedAt, now),
       });
 

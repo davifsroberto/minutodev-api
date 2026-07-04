@@ -7,9 +7,11 @@ import {
   ContentsService,
   ContentTranslation,
 } from '../contents/contents.service';
+import { InterestsService } from '../interests/interests.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import {
   RADAR_SECTION_KEYS,
+  RadarForYouResponseDto,
   RadarItemDto,
   RadarResponseDto,
   RadarSectionDto,
@@ -37,6 +39,7 @@ export class RadarService {
   constructor(
     private readonly contents: ContentsService,
     private readonly relevance: RelevanceService,
+    private readonly interests: InterestsService,
   ) {}
 
   setNowProvider(now: () => Date): void {
@@ -44,6 +47,49 @@ export class RadarService {
   }
 
   async getToday(query: RadarQueryDto): Promise<RadarResponseDto> {
+    return this.buildBriefing(query);
+  }
+
+  async getForYou(
+    userId: string,
+    query: RadarQueryDto,
+  ): Promise<RadarForYouResponseDto> {
+    const interestSlugs = await this.loadInterests(userId);
+    const personalized = interestSlugs !== null && interestSlugs.size > 0;
+    const briefing = await this.buildBriefing(
+      query,
+      personalized ? interestSlugs : undefined,
+    );
+
+    return {
+      ...briefing,
+      personalized,
+      personalizationFallback: !personalized,
+    };
+  }
+
+  // Falha ao carregar interesses não pode derrubar o radar: degrada para o
+  // ranking geral e o chamador sinaliza o fallback na resposta.
+  private async loadInterests(
+    userId: string,
+  ): Promise<ReadonlySet<string> | null> {
+    try {
+      return new Set(await this.interests.getForUser(userId));
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load interests for radar personalization: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      return null;
+    }
+  }
+
+  private async buildBriefing(
+    query: RadarQueryDto,
+    interestSlugs?: ReadonlySet<string>,
+  ): Promise<RadarResponseDto> {
     const now = this.now();
     const requestedDay = this.resolveDay(query.date, now);
     const { day, items } = await this.resolveBriefing(requestedDay);
@@ -54,6 +100,7 @@ export class RadarService {
       items,
       new Set(translations.keys()),
       now,
+      interestSlugs,
     );
 
     const buckets = this.sortBuckets(this.assignSections(items), ranking);

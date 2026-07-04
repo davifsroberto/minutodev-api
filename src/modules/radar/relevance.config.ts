@@ -14,6 +14,12 @@ export const AUTHORITY_WEIGHT = 0.25;
 export const COVERAGE_WEIGHT = 0.25;
 export const ENRICHMENT_WEIGHT = 0.15;
 
+// Boost aditivo do radar personalizado, fora da soma editorial (que fecha em
+// 1.0): conteúdo nos interesses do usuário sobe sem nunca esconder os demais.
+// Calibrado abaixo do peso máximo de recência — um conteúdo fresco e forte
+// fora dos interesses ainda pode vencer um antigo dentro deles.
+export const INTEREST_WEIGHT = 0.3;
+
 export const RECENCY_HALF_LIFE_HOURS = 24;
 export const JACCARD_SIMILARITY_THRESHOLD = 0.4;
 export const COVERAGE_SATURATION = 3;
