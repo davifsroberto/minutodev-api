@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { ContentType } from '@prisma/client';
 
@@ -10,6 +10,20 @@ export const RADAR_SECTION_KEYS = [
 ] as const;
 
 export type RadarSectionKey = (typeof RADAR_SECTION_KEYS)[number];
+
+export class RadarViewerStateDto {
+  @ApiProperty({
+    description: 'True quando o usuário já abriu o conteúdo (há histórico).',
+    example: true,
+  })
+  opened!: boolean;
+
+  @ApiProperty({
+    description: 'True quando o usuário marcou o conteúdo como lido.',
+    example: false,
+  })
+  read!: boolean;
+}
 
 export class RadarItemDto {
   @ApiProperty({
@@ -77,6 +91,13 @@ export class RadarItemDto {
     type: String,
   })
   publishedAt!: Date | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Estado de leitura do usuário autenticado. Presente apenas no /radar/for-you; ausente no /radar/today e para anônimos.',
+    type: RadarViewerStateDto,
+  })
+  viewerState?: RadarViewerStateDto;
 }
 
 export class RadarSectionDto {

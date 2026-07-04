@@ -12,8 +12,10 @@ import {
   ContentsService,
   ContentTranslation,
 } from '../contents/contents.service';
+import { ContentReadState, HistoryService } from '../history/history.service';
 import { InterestsService } from '../interests/interests.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
+import { RadarForYouResponseDto, RadarItemDto } from './dto/radar-response.dto';
 import { RADAR_MAX_DAILY_ITEMS, RadarService } from './radar.service';
 import { RelevanceService } from './relevance.service';
 
@@ -23,6 +25,7 @@ type ContentsServiceMock = Pick<
   'findEligibleForDay' | 'findMostRecentEligibleDay' | 'findReadyTranslations'
 >;
 type InterestsServiceMock = Pick<InterestsService, 'getForUser'>;
+type HistoryServiceMock = Pick<HistoryService, 'findReadStatesForContents'>;
 
 const createSource = (overrides: Partial<Source> = {}): Source => ({
   category: 'engineering',
@@ -81,6 +84,12 @@ describe('RadarService', () => {
   };
   let relevance: RelevanceService;
   let interests: { getForUser: jest.Mock<Promise<string[]>, [string]> };
+  let history: {
+    findReadStatesForContents: jest.Mock<
+      Promise<Map<string, ContentReadState>>,
+      [string, string[]]
+    >;
+  };
   let service: RadarService;
 
   beforeEach(() => {
@@ -97,10 +106,18 @@ describe('RadarService', () => {
     relevance = new RelevanceService();
     interests = { getForUser: jest.fn<Promise<string[]>, [string]>() };
     interests.getForUser.mockResolvedValue([]);
+    history = {
+      findReadStatesForContents: jest.fn<
+        Promise<Map<string, ContentReadState>>,
+        [string, string[]]
+      >(),
+    };
+    history.findReadStatesForContents.mockResolvedValue(new Map());
     service = new RadarService(
       contents as ContentsServiceMock as ContentsService,
       relevance,
       interests as InterestsServiceMock as InterestsService,
+      history as HistoryServiceMock as HistoryService,
     );
   });
 
@@ -221,11 +238,12 @@ describe('RadarService', () => {
       'localized',
       'limited-out',
     ]);
-    // O 4º argumento (interesses) é sempre undefined no radar geral.
+    // Radar geral: interesses (4º) e histórico (5º) são sempre undefined.
     expect(rank).toHaveBeenCalledWith(
       items,
       new Set(['localized']),
       now,
+      undefined,
       undefined,
     );
     expect(response.sections[2].items[0].title).toBe('Título localizado');
@@ -632,14 +650,24 @@ describe('RadarService', () => {
 
       expect(forYou.personalized).toBe(false);
       expect(forYou.personalizationFallback).toBe(true);
-      expect(forYou.sections).toEqual(general.sections);
       expect(forYou.featuredId).toBe(general.featuredId);
+      // Mesma ordem do radar geral (ranking degradado), diferindo apenas pelo
+      // viewerState aditivo que o for-you carrega.
+      const idsPerSection = (response: typeof general) =>
+        response.sections.map((section) => ({
+          key: section.key,
+          ids: section.items.map((item) => item.id),
+        }));
+      expect(idsPerSection(forYou)).toEqual(idsPerSection(general));
+      // Interesses (4º) undefined no fallback; histórico (5º) é um Set (vazio),
+      // porque o for-you sempre carrega o histórico do usuário autenticado.
       expect(rank).toHaveBeenNthCalledWith(
         1,
         expect.anything(),
         expect.anything(),
         expect.any(Date),
         undefined,
+        expect.any(Set),
       );
     });
 
@@ -668,6 +696,142 @@ describe('RadarService', () => {
       expect(interests.getForUser).not.toHaveBeenCalled();
       expect(response).not.toHaveProperty('personalized');
       expect(response).not.toHaveProperty('personalizationFallback');
+    });
+
+    describe('histórico de leitura (13C)', () => {
+      const allItems = (response: RadarForYouResponseDto): RadarItemDto[] =>
+        response.sections.flatMap((section) => section.items);
+
+      const findItem = (
+        response: RadarForYouResponseDto,
+        id: string,
+      ): RadarItemDto | undefined =>
+        allItems(response).find((item) => item.id === id);
+
+      it('carrega o histórico dos conteúdos resolvidos e anexa viewerState em todo card', async () => {
+        contents.findEligibleForDay.mockResolvedValue(twins());
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([['twin-ai', { opened: true, read: true }]]),
+        );
+
+        const response = await service.getForYou(userId, createQuery());
+
+        expect(history.findReadStatesForContents).toHaveBeenCalledWith(userId, [
+          'twin-engineering',
+          'twin-ai',
+        ]);
+        // Conteúdo com registro reflete o estado; sem registro cai no default.
+        expect(findItem(response, 'twin-ai')?.viewerState).toEqual({
+          opened: true,
+          read: true,
+        });
+        expect(findItem(response, 'twin-engineering')?.viewerState).toEqual({
+          opened: false,
+          read: false,
+        });
+      });
+
+      it('penaliza apenas os lidos no ranking, rebaixando-os dentro da seção', async () => {
+        // Gêmeos editoriais em trends: 'twin-ai' vence por id no ranking geral.
+        // Marcar 'twin-ai' como lido aplica -READ_PENALTY e inverte a ordem.
+        contents.findEligibleForDay.mockResolvedValue(twins());
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([['twin-ai', { opened: true, read: true }]]),
+        );
+
+        const response = await service.getForYou(userId, createQuery());
+        const trends = response.sections.find(
+          (section) => section.key === 'trends',
+        );
+
+        expect(trends?.items.map((item) => item.id)).toEqual([
+          'twin-engineering',
+          'twin-ai',
+        ]);
+      });
+
+      it('featured passa a evitar o conteúdo lido quando os demais empatam', async () => {
+        contents.findEligibleForDay.mockResolvedValue(twins());
+        const general = await service.getToday(createQuery());
+        // No radar geral 'twin-ai' é o destaque (vence por id no empate).
+        expect(general.featuredId).toBe('twin-ai');
+
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([['twin-ai', { opened: true, read: true }]]),
+        );
+        const response = await service.getForYou(userId, createQuery());
+
+        expect(response.featuredId).toBe('twin-engineering');
+      });
+
+      it('penaliza sem esconder: a contagem de itens é invariante ao histórico', async () => {
+        const items = [
+          ...twins(),
+          createContent({ contentType: ContentType.RELEASE, id: 'rel' }),
+          createContent({ category: null, id: 'rec' }),
+        ];
+        contents.findEligibleForDay.mockResolvedValue(items);
+
+        const withoutHistory = await service.getForYou(userId, createQuery());
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([
+            ['twin-ai', { opened: true, read: true }],
+            ['rel', { opened: true, read: true }],
+          ]),
+        );
+        const withHistory = await service.getForYou(userId, createQuery());
+
+        const count = (response: RadarForYouResponseDto) =>
+          allItems(response).length;
+        expect(count(withHistory)).toBe(count(withoutHistory));
+        expect(count(withHistory)).toBe(4);
+      });
+
+      it('interesse supera a penalidade: ler um conteúdo de interesse não o rebaixa abaixo dos fora de interesse', async () => {
+        // twin-ai (interesse 'ai', lido) => editorial + 0.30 - 0.15.
+        // twin-engineering (sem interesse, não lido) => editorial.
+        // Como 0.15 < 0.30, o lido-de-interesse ainda lidera.
+        contents.findEligibleForDay.mockResolvedValue(twins());
+        interests.getForUser.mockResolvedValue(['ai']);
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([['twin-ai', { opened: true, read: true }]]),
+        );
+
+        const response = await service.getForYou(userId, createQuery());
+        const trends = response.sections.find(
+          (section) => section.key === 'trends',
+        );
+
+        expect(trends?.items[0].id).toBe('twin-ai');
+        expect(response.featuredId).toBe('twin-ai');
+      });
+
+      it('só os lidos entram na penalidade — apenas-aberto não é penalizado', async () => {
+        contents.findEligibleForDay.mockResolvedValue(twins());
+        history.findReadStatesForContents.mockResolvedValue(
+          new Map([['twin-ai', { opened: true, read: false }]]),
+        );
+        const rank = jest.spyOn(relevance, 'rank');
+
+        await service.getForYou(userId, createQuery());
+
+        // 5º argumento é o Set de lidos — vazio, pois 'twin-ai' está só aberto.
+        const readIds = rank.mock.calls[0][4];
+        expect(readIds).toEqual(new Set());
+      });
+
+      it('getToday não carrega histórico nem inclui viewerState', async () => {
+        contents.findEligibleForDay.mockResolvedValue(twins());
+
+        const response = await service.getToday(createQuery());
+
+        expect(history.findReadStatesForContents).not.toHaveBeenCalled();
+        expect(
+          response.sections.flatMap((section) => section.items),
+        ).not.toContainEqual(
+          expect.objectContaining({ viewerState: expect.anything() }),
+        );
+      });
     });
   });
 });

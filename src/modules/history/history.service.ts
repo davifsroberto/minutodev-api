@@ -11,6 +11,12 @@ type PaginatedHistory = {
   total: number;
 };
 
+/** Estado de leitura de um conteúdo para um usuário (Sprint 13C). */
+export type ContentReadState = {
+  opened: boolean;
+  read: boolean;
+};
+
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === 'P2002';
@@ -126,6 +132,33 @@ export class HistoryService {
     );
 
     return { data, total };
+  }
+
+  /**
+   * Estado de leitura de vários conteúdos de uma vez (Sprint 13C) — o radar
+   * personalizado usa isto para marcar `viewerState` e penalizar já lidos.
+   * Uma única query servida pelo índice único (userId, contentId). Conteúdos
+   * sem registro simplesmente não aparecem no Map (o chamador aplica o
+   * default {opened:false, read:false}). `opened` é true sempre que há
+   * registro; `read` quando `readAt` foi preenchido.
+   */
+  async findReadStatesForContents(
+    userId: string,
+    contentIds: string[],
+  ): Promise<Map<string, ContentReadState>> {
+    if (contentIds.length === 0) return new Map();
+
+    const rows = await this.prisma.userContentHistory.findMany({
+      where: { userId, contentId: { in: contentIds } },
+      select: { contentId: true, openCount: true, readAt: true },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.contentId,
+        { opened: row.openCount > 0, read: row.readAt !== null },
+      ]),
+    );
   }
 
   private async ensureContentExists(contentId: string): Promise<void> {

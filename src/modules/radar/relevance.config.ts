@@ -20,6 +20,12 @@ export const ENRICHMENT_WEIGHT = 0.15;
 // fora dos interesses ainda pode vencer um antigo dentro deles.
 export const INTEREST_WEIGHT = 0.3;
 
+// Penalidade subtrativa para conteúdo já LIDO no radar personalizado (Sprint
+// 13C): reduz levemente a prioridade sem esconder nada. Mantida ABAIXO de
+// INTEREST_WEIGHT de propósito — assim ler um conteúdo de interesse nunca o
+// rebaixa abaixo de conteúdos fora do interesse. Só se aplica ao for-you.
+export const READ_PENALTY = 0.15;
+
 export const RECENCY_HALF_LIFE_HOURS = 24;
 export const JACCARD_SIMILARITY_THRESHOLD = 0.4;
 export const COVERAGE_SATURATION = 3;

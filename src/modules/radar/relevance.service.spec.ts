@@ -13,6 +13,7 @@ import {
   DEFAULT_AUTHORITY_WEIGHT,
   ENRICHMENT_WEIGHT,
   INTEREST_WEIGHT,
+  READ_PENALTY,
   RECENCY_HALF_LIFE_HOURS,
   RECENCY_WEIGHT,
   SOURCE_AUTHORITY_WEIGHTS,
@@ -184,6 +185,29 @@ describe('relevance score components', () => {
       calculateRelevanceScore(components),
     );
   });
+
+  it('subtracts the read penalty from the editorial score', () => {
+    const components = {
+      authority: 0.8,
+      coverage: 0.6,
+      enrichment: 1,
+      recency: 0.4,
+    };
+
+    expect(
+      calculateRelevanceScore({ ...components, readPenalty: 1 }),
+    ).toBeCloseTo(calculateRelevanceScore(components) - READ_PENALTY);
+    expect(calculateRelevanceScore({ ...components, readPenalty: 0 })).toBe(
+      calculateRelevanceScore(components),
+    );
+  });
+
+  it('keeps the read penalty smaller than the interest boost', () => {
+    // Garante a decisão da Sprint 13C: ler um conteúdo de interesse
+    // (+INTEREST_WEIGHT -READ_PENALTY) nunca o coloca abaixo de um conteúdo
+    // fora do interesse (+0).
+    expect(READ_PENALTY).toBeLessThan(INTEREST_WEIGHT);
+  });
 });
 
 describe('RelevanceService', () => {
@@ -294,6 +318,98 @@ describe('RelevanceService', () => {
       expect(ranking.signals.get('editorial-twin')?.score).toBeCloseTo(
         editorial.signals.get('editorial-twin')?.score ?? -1,
       );
+    });
+  });
+
+  describe('read penalty (13C)', () => {
+    // Gêmeos editoriais: 'z-twin' vence 'a-twin' por... nada — 'a-twin' vence
+    // por id no desempate. Usamos ids para controlar o empate.
+    const twins = () => [
+      createContent({ category: 'ai', id: 'a-twin', title: 'Alpha' }),
+      createContent({ category: 'ai', id: 'b-twin', title: 'Beta' }),
+    ];
+
+    it('subtracts the penalty from read items and leaves unread untouched', () => {
+      const editorial = service.rank(twins(), new Set(), NOW);
+      const penalized = service.rank(
+        twins(),
+        new Set(),
+        NOW,
+        undefined,
+        new Set(['a-twin']),
+      );
+
+      expect(penalized.signals.get('a-twin')?.score).toBeCloseTo(
+        (editorial.signals.get('a-twin')?.score ?? 0) - READ_PENALTY,
+      );
+      expect(penalized.signals.get('b-twin')?.score).toBeCloseTo(
+        editorial.signals.get('b-twin')?.score ?? -1,
+      );
+    });
+
+    it('moves the featured away from a read item when the rest tie', () => {
+      const editorial = service.rank(twins(), new Set(), NOW);
+      expect(editorial.featuredId).toBe('a-twin');
+
+      const penalized = service.rank(
+        twins(),
+        new Set(),
+        NOW,
+        undefined,
+        new Set(['a-twin']),
+      );
+      expect(penalized.featuredId).toBe('b-twin');
+    });
+
+    it('never removes items: signal count is invariant to the read set', () => {
+      const editorial = service.rank(twins(), new Set(), NOW);
+      const penalized = service.rank(
+        twins(),
+        new Set(),
+        NOW,
+        undefined,
+        new Set(['a-twin', 'b-twin']),
+      );
+
+      expect(penalized.signals.size).toBe(editorial.signals.size);
+    });
+
+    it('interest outweighs the read penalty (0.15 < 0.30)', () => {
+      // 'a-twin' de interesse + lido; 'b-twin' fora de interesse + não lido.
+      const items = [
+        createContent({ category: 'ai', id: 'a-twin', title: 'Alpha' }),
+        createContent({ category: 'backend', id: 'b-twin', title: 'Beta' }),
+      ];
+
+      const ranking = service.rank(
+        items,
+        new Set(),
+        NOW,
+        new Set(['ai']),
+        new Set(['a-twin']),
+      );
+
+      expect(ranking.signals.get('a-twin')?.score).toBeGreaterThan(
+        ranking.signals.get('b-twin')?.score ?? 0,
+      );
+      expect(ranking.featuredId).toBe('a-twin');
+    });
+
+    it('without a read set the ranking is identical to the editorial one', () => {
+      const editorial = service.rank(twins(), new Set(), NOW);
+      const omitted = service.rank(
+        twins(),
+        new Set(),
+        NOW,
+        undefined,
+        undefined,
+      );
+      const empty = service.rank(twins(), new Set(), NOW, undefined, new Set());
+
+      expect([...omitted.signals]).toEqual([...editorial.signals]);
+      expect([...empty.signals]).toEqual([...editorial.signals]);
+      expect(omitted.featuredId).toBe(editorial.featuredId);
+      expect(empty.featuredId).toBe(editorial.featuredId);
     });
   });
 });

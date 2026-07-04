@@ -22,11 +22,17 @@ import { AppModule } from '../../app.module';
 import { configureBootstrapGlobals } from '../../bootstrap';
 import { AUTH_COOKIE_NAME } from '../auth/auth.config';
 import { ContentsService } from '../contents/contents.service';
+import { HistoryService } from '../history/history.service';
 import { InterestsService } from '../interests/interests.service';
 import { RadarService } from './radar.service';
 import { RelevanceService } from './relevance.service';
 
 expand(loadEnv());
+
+type ViewerStateResponse = {
+  opened: boolean;
+  read: boolean;
+};
 
 type RadarItemResponse = {
   id: string;
@@ -39,6 +45,7 @@ type RadarItemResponse = {
   contentType: ContentType;
   publishedAt: string | null;
   sourceCount: number;
+  viewerState?: ViewerStateResponse;
 };
 
 type RadarSectionResponse = {
@@ -78,6 +85,9 @@ const RADAR_ITEM_KEYS = [
   'title',
   'url',
 ];
+
+// No /radar/for-you cada card carrega ainda o viewerState (Sprint 13C).
+const RADAR_FOR_YOU_ITEM_KEYS = [...RADAR_ITEM_KEYS, 'viewerState'].sort();
 
 const expectErrorEnvelope = (
   body: ErrorEnvelope,
@@ -135,8 +145,12 @@ describe('RadarController integration', () => {
   let relatedSource: Source;
   let cookieWithInterests: string;
   let cookieWithoutInterests: string;
+  // Usuário dedicado ao histórico (13C), sem interesses: isola o efeito da
+  // penalidade de leitura das asserções de ordenação por interesse.
+  let cookieHistory: string;
   const emailWithInterests = `${runId}-with-interests@example.test`;
   const emailWithoutInterests = `${runId}-without-interests@example.test`;
+  const emailHistory = `${runId}-history@example.test`;
   const currentNow = new Date('2099-09-15T14:00:00.000Z');
 
   beforeAll(async () => {
@@ -149,17 +163,24 @@ describe('RadarController integration', () => {
           contentsService: ContentsService,
           relevanceService: RelevanceService,
           interestsService: InterestsService,
+          historyService: HistoryService,
         ) => {
           const service = new RadarService(
             contentsService,
             relevanceService,
             interestsService,
+            historyService,
           );
           service.setNowProvider(() => currentNow);
 
           return service;
         },
-        inject: [ContentsService, RelevanceService, InterestsService],
+        inject: [
+          ContentsService,
+          RelevanceService,
+          InterestsService,
+          HistoryService,
+        ],
       })
       .compile();
 
@@ -345,7 +366,11 @@ describe('RadarController integration', () => {
     // Upsert porque 'community' é tema canônico do catálogo (pode já ter sido
     // semeado); por isso ele também não é apagado no afterAll.
     await prisma.user.deleteMany({
-      where: { email: { in: [emailWithInterests, emailWithoutInterests] } },
+      where: {
+        email: {
+          in: [emailWithInterests, emailWithoutInterests, emailHistory],
+        },
+      },
     });
     const communityTopic = await prisma.topic.upsert({
       where: { slug: 'community' },
@@ -371,10 +396,20 @@ describe('RadarController integration', () => {
         providerId: `${runId}-without-interests`,
       },
     });
+    const userHistory = await prisma.user.create({
+      data: {
+        email: emailHistory,
+        name: 'Radar Histórico Integração',
+        avatarUrl: null,
+        provider: AuthProvider.GOOGLE,
+        providerId: `${runId}-history`,
+      },
+    });
 
     const jwt = app.get(JwtService);
     cookieWithInterests = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: userWithInterests.id })}`;
     cookieWithoutInterests = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: userWithoutInterests.id })}`;
+    cookieHistory = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: userHistory.id })}`;
   });
 
   afterAll(async () => {
@@ -385,9 +420,14 @@ describe('RadarController integration', () => {
         },
       },
     });
-    // O delete em cascata remove os UserInterest; o Topic fica (é catálogo).
+    // O delete em cascata remove UserInterest e UserContentHistory; o Topic
+    // fica (é catálogo).
     await prisma.user.deleteMany({
-      where: { email: { in: [emailWithInterests, emailWithoutInterests] } },
+      where: {
+        email: {
+          in: [emailWithInterests, emailWithoutInterests, emailHistory],
+        },
+      },
     });
     await prisma.$disconnect();
     await app.close();
@@ -425,6 +465,36 @@ describe('RadarController integration', () => {
 
   const allTitles = (body: RadarResponse): string[] =>
     body.sections.flatMap((section) => titlesOf(section));
+
+  const allItems = (body: RadarResponse): RadarItemResponse[] =>
+    body.sections.flatMap((section) => section.items);
+
+  // Remove o viewerState para comparar a estrutura do for-you com o radar geral.
+  const stripViewerState = (body: RadarForYouResponse): RadarResponse => ({
+    ...body,
+    sections: body.sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        const rest = { ...item };
+        delete rest.viewerState;
+
+        return rest;
+      }),
+    })),
+  });
+
+  const contentIdByTitle = async (title: string): Promise<string> => {
+    const row = await prisma.content.findFirst({
+      where: {
+        url: `https://example.test/${runId}/${title.replaceAll(' ', '-')}`,
+      },
+      select: { id: true },
+    });
+
+    if (row === null) throw new Error(`Missing content fixture ${title}`);
+
+    return row.id;
+  };
 
   it('composes four ordered sections with single-section priority dedup', async () => {
     const body = await getRadar();
@@ -658,11 +728,15 @@ describe('RadarController integration', () => {
       );
     });
 
-    it('keeps the trimmed card contract without exposing the raw score', async () => {
+    it('keeps the trimmed card contract (plus viewerState) without exposing the raw score', async () => {
       const body = await getForYou(cookieWithInterests);
       const item = sectionByKey(body, 'trends').items[0];
 
-      expect(Object.keys(item).sort()).toEqual(RADAR_ITEM_KEYS);
+      expect(Object.keys(item).sort()).toEqual(RADAR_FOR_YOU_ITEM_KEYS);
+      expect(Object.keys(item.viewerState ?? {}).sort()).toEqual([
+        'opened',
+        'read',
+      ]);
       expect(Object.keys(body).sort()).toEqual([
         'date',
         'estimatedReadTimeMinutes',
@@ -680,7 +754,14 @@ describe('RadarController integration', () => {
       expect(body.personalized).toBe(false);
       expect(body.personalizationFallback).toBe(true);
       expect(body.featuredId).toBe(general.featuredId);
-      expect(body.sections).toEqual(general.sections);
+      // Mesma estrutura do radar geral, ignorando o viewerState aditivo.
+      expect(stripViewerState(body).sections).toEqual(general.sections);
+      // Sem histórico, todo card vem com o viewerState default.
+      for (const section of body.sections) {
+        for (const item of section.items) {
+          expect(item.viewerState).toEqual({ opened: false, read: false });
+        }
+      }
     });
 
     it('honors the same query contract as the general radar', async () => {
@@ -704,6 +785,90 @@ describe('RadarController integration', () => {
         'BAD_REQUEST',
         '/radar/for-you?limitPerSection=0',
       );
+    });
+
+    describe('estado de leitura (13C)', () => {
+      const openContent = async (
+        cookie: string,
+        contentId: string,
+      ): Promise<void> => {
+        await request(app.getHttpServer())
+          .post(`/me/history/contents/${contentId}/open`)
+          .set('Cookie', cookie)
+          .expect(200);
+      };
+
+      const readContent = async (
+        cookie: string,
+        contentId: string,
+      ): Promise<void> => {
+        await request(app.getHttpServer())
+          .post(`/me/history/contents/${contentId}/read`)
+          .set('Cookie', cookie)
+          .expect(200);
+      };
+
+      const itemById = (
+        body: RadarForYouResponse,
+        id: string,
+      ): RadarItemResponse | undefined =>
+        allItems(body).find((item) => item.id === id);
+
+      // Registrado uma vez: 'tool by type' apenas aberto, 'tool extra' lido.
+      // O usuário dedicado (cookieHistory) não afeta os outros testes.
+      beforeAll(async () => {
+        const openedId = await contentIdByTitle('tool by type');
+        const readId = await contentIdByTitle('tool extra');
+        await openContent(cookieHistory, openedId);
+        await readContent(cookieHistory, readId);
+      });
+
+      it('reflete o histórico no viewerState de cada card (aberto vs lido vs intocado)', async () => {
+        const openedId = await contentIdByTitle('tool by type');
+        const readId = await contentIdByTitle('tool extra');
+        const untouchedId = await contentIdByTitle('release newest');
+
+        const body = await getForYou(cookieHistory);
+
+        expect(itemById(body, openedId)?.viewerState).toEqual({
+          opened: true,
+          read: false,
+        });
+        expect(itemById(body, readId)?.viewerState).toEqual({
+          opened: true,
+          read: true,
+        });
+        expect(itemById(body, untouchedId)?.viewerState).toEqual({
+          opened: false,
+          read: false,
+        });
+      });
+
+      it('penaliza sem esconder: mesma contagem e mesmos títulos do radar geral', async () => {
+        const general = await getRadar();
+        const body = await getForYou(cookieHistory);
+
+        expect(allItems(body).length).toBe(allItems(general).length);
+        expect(allTitles(body).sort()).toEqual(allTitles(general).sort());
+      });
+
+      it('não personaliza por interesse mas ainda traz viewerState (usuário sem interesses)', async () => {
+        const body = await getForYou(cookieHistory);
+
+        expect(body.personalized).toBe(false);
+        expect(body.personalizationFallback).toBe(true);
+        expect(
+          allItems(body).every((item) => item.viewerState !== undefined),
+        ).toBe(true);
+      });
+
+      it('não expõe viewerState no /radar/today (anônimo/geral)', async () => {
+        const body = await getRadar();
+
+        expect(
+          allItems(body).some((item) => item.viewerState !== undefined),
+        ).toBe(false);
+      });
     });
   });
 });

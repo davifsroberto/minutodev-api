@@ -9,6 +9,7 @@ import {
   DEFAULT_AUTHORITY_WEIGHT,
   ENRICHMENT_WEIGHT,
   INTEREST_WEIGHT,
+  READ_PENALTY,
   RECENCY_HALF_LIFE_HOURS,
   RECENCY_WEIGHT,
   SOURCE_AUTHORITY_WEIGHTS,
@@ -36,6 +37,8 @@ export interface RelevanceComponents {
   enrichment: number;
   /** Sinal do radar personalizado; ausente/0 mantém o score editorial puro. */
   interest?: number;
+  /** Sinal do histórico (Sprint 13C): 1 quando lido, subtrai READ_PENALTY. */
+  readPenalty?: number;
 }
 
 export interface RelevanceCandidate {
@@ -86,12 +89,14 @@ export const calculateRelevanceScore = ({
   coverage,
   enrichment,
   interest = 0,
+  readPenalty = 0,
 }: RelevanceComponents): number =>
   RECENCY_WEIGHT * recency +
   AUTHORITY_WEIGHT * authority +
   COVERAGE_WEIGHT * coverage +
   ENRICHMENT_WEIGHT * enrichment +
-  INTEREST_WEIGHT * interest;
+  INTEREST_WEIGHT * interest -
+  READ_PENALTY * readPenalty;
 
 export const compareRelevanceCandidates = (
   left: RelevanceCandidate,
@@ -125,6 +130,7 @@ export interface RelevanceService {
     enrichedIds: ReadonlySet<string>,
     now: Date,
     interestSlugs?: ReadonlySet<string>,
+    readContentIds?: ReadonlySet<string>,
   ): RelevanceRanking;
 }
 
@@ -135,6 +141,7 @@ class RelevanceServiceProvider implements RelevanceService {
     enrichedIds: ReadonlySet<string>,
     now: Date,
     interestSlugs?: ReadonlySet<string>,
+    readContentIds?: ReadonlySet<string>,
   ): RelevanceRanking {
     const sourceCounts = getSourceCountByItemId(items);
     const candidates = items.map((item): RelevanceCandidate => {
@@ -147,6 +154,7 @@ class RelevanceServiceProvider implements RelevanceService {
           interestSlugs === undefined
             ? 0
             : calculateInterestScore(item, interestSlugs),
+        readPenalty: readContentIds?.has(item.id) ? 1 : 0,
         recency: calculateRecencyScore(item.publishedAt, item.collectedAt, now),
       });
 

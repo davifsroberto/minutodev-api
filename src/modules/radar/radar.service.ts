@@ -7,6 +7,7 @@ import {
   ContentsService,
   ContentTranslation,
 } from '../contents/contents.service';
+import { ContentReadState, HistoryService } from '../history/history.service';
 import { InterestsService } from '../interests/interests.service';
 import { RadarQueryDto } from './dto/radar-query.dto';
 import {
@@ -29,7 +30,12 @@ export const RADAR_MAX_DAILY_ITEMS = 500;
 type RadarContent = Content & { source: Source };
 type SectionBuckets = Record<RadarSectionKey, RadarContent[]>;
 
+// Mapa de estado de leitura por conteúdo (Sprint 13C). Presente = fluxo
+// for-you (mesmo vazio → viewerState com defaults); ausente = radar geral.
+type ReadStates = ReadonlyMap<string, ContentReadState>;
+
 const TREND_CATEGORIES = new Set(['ai', 'engineering', 'community']);
+const DEFAULT_VIEWER_STATE: ContentReadState = { opened: false, read: false };
 
 @Injectable()
 export class RadarService {
@@ -40,6 +46,7 @@ export class RadarService {
     private readonly contents: ContentsService,
     private readonly relevance: RelevanceService,
     private readonly interests: InterestsService,
+    private readonly history: HistoryService,
   ) {}
 
   setNowProvider(now: () => Date): void {
@@ -56,9 +63,12 @@ export class RadarService {
   ): Promise<RadarForYouResponseDto> {
     const interestSlugs = await this.loadInterests(userId);
     const personalized = interestSlugs !== null && interestSlugs.size > 0;
+    // O histórico depende só do userId — carrega mesmo no fallback de
+    // personalização (interesses ausentes ou com falha).
     const briefing = await this.buildBriefing(
       query,
       personalized ? interestSlugs : undefined,
+      userId,
     );
 
     return {
@@ -89,6 +99,7 @@ export class RadarService {
   private async buildBriefing(
     query: RadarQueryDto,
     interestSlugs?: ReadonlySet<string>,
+    userId?: string,
   ): Promise<RadarResponseDto> {
     const now = this.now();
     const requestedDay = this.resolveDay(query.date, now);
@@ -96,16 +107,26 @@ export class RadarService {
     const translations = await this.contents.findReadyTranslations(
       items.map((item) => item.id),
     );
+    // Só no for-you (userId presente): carrega o estado de leitura dos itens
+    // já resolvidos. No radar geral fica undefined — sem penalidade nem
+    // viewerState, mantendo o /radar/today idêntico.
+    const readStates = userId
+      ? await this.history.findReadStatesForContents(
+          userId,
+          items.map((item) => item.id),
+        )
+      : undefined;
     const ranking = this.relevance.rank(
       items,
       new Set(translations.keys()),
       now,
       interestSlugs,
+      this.readContentIds(readStates),
     );
 
     const buckets = this.sortBuckets(this.assignSections(items), ranking);
     const sections = this.localizeSections(
-      this.buildSections(buckets, ranking, query.limitPerSection),
+      this.buildSections(buckets, ranking, query.limitPerSection, readStates),
       translations,
     );
     const totalItems = sections.reduce(
@@ -119,6 +140,20 @@ export class RadarService {
       featuredId: this.resolveFeaturedId(ranking.featuredId, sections),
       sections,
     };
+  }
+
+  // Só os lidos entram na penalidade (decisão da Sprint 13C: 'read' apenas).
+  private readContentIds(
+    readStates: ReadStates | undefined,
+  ): ReadonlySet<string> | undefined {
+    if (readStates === undefined) return undefined;
+
+    const ids = new Set<string>();
+    for (const [contentId, state] of readStates) {
+      if (state.read) ids.add(contentId);
+    }
+
+    return ids;
   }
 
   private localizeSections(
@@ -226,12 +261,15 @@ export class RadarService {
     buckets: SectionBuckets,
     ranking: RelevanceRanking,
     limitPerSection: number,
+    readStates?: ReadStates,
   ): RadarSectionDto[] {
     return RADAR_SECTION_KEYS.map((key) => ({
       key,
       items: buckets[key]
         .slice(0, limitPerSection)
-        .map((item) => this.toRadarItem(item, ranking.signals.get(item.id))),
+        .map((item) =>
+          this.toRadarItem(item, ranking.signals.get(item.id), readStates),
+        ),
     }));
   }
 
@@ -267,8 +305,9 @@ export class RadarService {
   private toRadarItem(
     item: RadarContent,
     signal?: RelevanceSignal,
+    readStates?: ReadStates,
   ): RadarItemDto {
-    return {
+    const base: RadarItemDto = {
       category: item.category,
       contentType: item.contentType,
       id: item.id,
@@ -279,6 +318,16 @@ export class RadarService {
       summary: item.summary,
       title: item.title,
       url: item.url,
+    };
+
+    // No for-you (readStates presente) todo card leva viewerState — com os
+    // defaults quando o usuário nunca abriu o conteúdo. No radar geral o campo
+    // é omitido por completo.
+    if (readStates === undefined) return base;
+
+    return {
+      ...base,
+      viewerState: readStates.get(item.id) ?? DEFAULT_VIEWER_STATE,
     };
   }
 
