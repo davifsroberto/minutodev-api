@@ -23,6 +23,20 @@ export const DEFAULT_ENRICHMENT_LANGUAGE = 'pt-BR';
 const GENERATION_FAILURE_MESSAGE =
   'Não foi possível gerar a versão resumida com IA no momento. Tente novamente mais tarde.';
 
+/**
+ * Cooldown padrão para falha transitória SEM janela informada (5xx/timeout/rede):
+ * segura o próximo auto-retry por um tempo curto em vez de martelar o provedor a
+ * cada abertura.
+ */
+const TRANSIENT_DEFAULT_COOLDOWN_MS = 30_000;
+
+/**
+ * Teto do cooldown. O 429 de cota pode pedir uma janela longa (até o reset
+ * diário); limitamos para não travar o conteúdo por horas — se ainda estiver
+ * esgotado quando a janela vencer, a próxima abertura só reaplica o cooldown.
+ */
+const TRANSIENT_MAX_COOLDOWN_MS = 3_600_000;
+
 type ContentWithSource = Content & { source: Source };
 
 type GenerationClaim = { enrichment: ContentEnrichment; owned: boolean };
@@ -81,19 +95,45 @@ export class EnrichmentsService {
       where: { contentId_language: { contentId: content.id, language } },
     });
 
-    // Já há resultado pronto (COMPLETED) ou uma geração em andamento
-    // (PROCESSING): devolve do banco sem disparar IA. PROCESSING é o que evita
-    // uma segunda geração simultânea para o mesmo (contentId, language).
-    if (
-      existing !== null &&
-      (existing.status === EnrichmentStatus.COMPLETED ||
-        existing.status === EnrichmentStatus.PROCESSING)
-    ) {
-      return existing;
+    if (existing !== null) {
+      // Já há resultado pronto (COMPLETED) ou uma geração em andamento
+      // (PROCESSING): devolve do banco sem disparar IA. PROCESSING é o que evita
+      // uma segunda geração simultânea para o mesmo (contentId, language).
+      if (
+        existing.status === EnrichmentStatus.COMPLETED ||
+        existing.status === EnrichmentStatus.PROCESSING
+      ) {
+        return existing;
+      }
+
+      // PENDING ainda dentro da janela de cooldown pós-429/5xx: serve o fallback
+      // (título/resumo originais já persistidos) SEM chamar a IA de novo. Sem
+      // isso, cada abertura durante um rate limit dispararia uma nova chamada que
+      // leva 429 na hora — queimando cota e somando latência a toda view.
+      if (this.isCoolingDown(existing)) {
+        return existing;
+      }
     }
 
-    // Inexistente, PENDING (fallback do 5A) ou FAILED: gera sob demanda.
+    // Inexistente, PENDING fora do cooldown, ou FAILED: gera sob demanda.
     return this.generate(content, existing, language);
+  }
+
+  /** PENDING cujo `retryAfter` ainda não venceu: segurando o próximo auto-retry. */
+  private isCoolingDown(enrichment: ContentEnrichment): boolean {
+    return (
+      enrichment.status === EnrichmentStatus.PENDING &&
+      enrichment.retryAfter !== null &&
+      enrichment.retryAfter.getTime() > Date.now()
+    );
+  }
+
+  /** Converte a janela de retry do provedor em um instante absoluto (com teto). */
+  private computeRetryAfter(error: TransientAiError): Date {
+    const requested = error.retryAfterMs ?? TRANSIENT_DEFAULT_COOLDOWN_MS;
+    const clamped = Math.min(Math.max(requested, 0), TRANSIENT_MAX_COOLDOWN_MS);
+
+    return new Date(Date.now() + clamped);
   }
 
   /** Compõe o registro persistido com os metadados do conteúdo (hero). */
@@ -184,7 +224,11 @@ export class EnrichmentsService {
         id: existing.id,
         status: { in: [EnrichmentStatus.PENDING, EnrichmentStatus.FAILED] },
       },
-      data: { status: EnrichmentStatus.PROCESSING, errorMessage: null },
+      data: {
+        status: EnrichmentStatus.PROCESSING,
+        errorMessage: null,
+        retryAfter: null,
+      },
     });
 
     if (count === 1) {
@@ -193,6 +237,7 @@ export class EnrichmentsService {
           ...existing,
           status: EnrichmentStatus.PROCESSING,
           errorMessage: null,
+          retryAfter: null,
         },
         owned: true,
       };
@@ -243,6 +288,7 @@ export class EnrichmentsService {
           model: this.aiService.resolveModelName(),
           status: EnrichmentStatus.COMPLETED,
           errorMessage: null,
+          retryAfter: null,
         },
       });
     } catch (error) {
@@ -251,8 +297,11 @@ export class EnrichmentsService {
 
       // Falha transitória (rate limit/5xx/timeout) NÃO é definitiva: voltamos a
       // PENDING para que a próxima visualização tente de novo sozinha, em vez de
-      // marcar um FAILED permanente (que exigiria ação manual). Erros definitivos
-      // (bloqueio de segurança, resposta inválida, 4xx) viram FAILED.
+      // marcar um FAILED permanente (que exigiria ação manual). Gravamos também
+      // `retryAfter` (a janela informada pelo provedor, com teto) para segurar o
+      // auto-retry até lá — assim um rate limit não vira martelada a cada view.
+      // Erros definitivos (bloqueio de segurança, resposta inválida, 4xx) viram
+      // FAILED.
       const transient = error instanceof TransientAiError;
 
       // Log técnico (sem secrets — as mensagens dos provedores nunca incluem a
@@ -264,12 +313,18 @@ export class EnrichmentsService {
 
       return this.prisma.contentEnrichment.update({
         where: { id: enrichment.id },
-        data: transient
-          ? { status: EnrichmentStatus.PENDING, errorMessage: null }
-          : {
-              status: EnrichmentStatus.FAILED,
-              errorMessage: GENERATION_FAILURE_MESSAGE,
-            },
+        data:
+          error instanceof TransientAiError
+            ? {
+                status: EnrichmentStatus.PENDING,
+                errorMessage: null,
+                retryAfter: this.computeRetryAfter(error),
+              }
+            : {
+                status: EnrichmentStatus.FAILED,
+                errorMessage: GENERATION_FAILURE_MESSAGE,
+                retryAfter: null,
+              },
       });
     }
   }

@@ -139,6 +139,7 @@ const createEnrichment = (
   model: null,
   originalUrl: 'https://example.test/content',
   provider: null,
+  retryAfter: null,
   shortSummary: 'Resumo do conteúdo.',
   status: EnrichmentStatus.PENDING,
   summary30s: null,
@@ -357,6 +358,7 @@ describe('EnrichmentsService', () => {
           model: 'gemini-2.5-flash',
           status: EnrichmentStatus.COMPLETED,
           errorMessage: null,
+          retryAfter: null,
         },
       });
     });
@@ -384,7 +386,11 @@ describe('EnrichmentsService', () => {
             in: [EnrichmentStatus.PENDING, EnrichmentStatus.FAILED],
           },
         },
-        data: { status: EnrichmentStatus.PROCESSING, errorMessage: null },
+        data: {
+          status: EnrichmentStatus.PROCESSING,
+          errorMessage: null,
+          retryAfter: null,
+        },
       });
       expect(ai.enrichContent).toHaveBeenCalledTimes(1);
       expect(prisma.contentEnrichment.update).toHaveBeenCalledWith(
@@ -447,6 +453,7 @@ describe('EnrichmentsService', () => {
           status: EnrichmentStatus.FAILED,
           errorMessage:
             'Não foi possível gerar a versão resumida com IA no momento. Tente novamente mais tarde.',
+          retryAfter: null,
         },
       });
 
@@ -481,11 +488,70 @@ describe('EnrichmentsService', () => {
       const result = await service.getOrCreateForContent(content.id);
 
       // Rate limit/5xx não é definitivo: volta a PENDING para auto-retry, em vez
-      // de FAILED permanente.
+      // de FAILED permanente — e grava `retryAfter` (janela do provedor) para
+      // segurar o próximo retry.
       expect(result.status).toBe(EnrichmentStatus.PENDING);
-      expect(prisma.contentEnrichment.update).toHaveBeenCalledWith({
-        where: { id: processing.id },
-        data: { status: EnrichmentStatus.PENDING, errorMessage: null },
+      const updateData = prisma.contentEnrichment.update.mock.calls[0][0].data;
+      expect(updateData).toMatchObject({
+        status: EnrichmentStatus.PENDING,
+        errorMessage: null,
+      });
+      const retryAfter = updateData.retryAfter as Date;
+      expect(retryAfter).toBeInstanceOf(Date);
+      // ~59s à frente (a janela que o provedor pediu), com folga de clock.
+      const deltaMs = retryAfter.getTime() - Date.now();
+      expect(deltaMs).toBeGreaterThan(55_000);
+      expect(deltaMs).toBeLessThanOrEqual(59_000);
+    });
+
+    it('serve o fallback sem chamar a IA enquanto um PENDING está em cooldown (retryAfter no futuro)', async () => {
+      const content = createContent();
+      const coolingDown = createEnrichment({
+        status: EnrichmentStatus.PENDING,
+        retryAfter: new Date(Date.now() + 30_000),
+      });
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(coolingDown);
+
+      const result = await service.getOrCreateForContent(content.id);
+
+      expect(result).toMatchObject({ id: coolingDown.id });
+      expect(ai.enrichContent).not.toHaveBeenCalled();
+      expect(prisma.contentEnrichment.updateMany).not.toHaveBeenCalled();
+      expect(prisma.contentEnrichment.update).not.toHaveBeenCalled();
+    });
+
+    it('regenera um PENDING cujo cooldown já venceu (retryAfter no passado)', async () => {
+      const content = createContent();
+      const expired = createEnrichment({
+        status: EnrichmentStatus.PENDING,
+        retryAfter: new Date(Date.now() - 1_000),
+      });
+      const completed = createEnrichment({
+        status: EnrichmentStatus.COMPLETED,
+      });
+      contents.findById.mockResolvedValue(content);
+      prisma.contentEnrichment.findUnique.mockResolvedValue(expired);
+      prisma.contentEnrichment.updateMany.mockResolvedValue({ count: 1 });
+      prisma.contentEnrichment.update.mockResolvedValue(completed);
+
+      await expect(
+        service.getOrCreateForContent(content.id),
+      ).resolves.toMatchObject({ id: completed.id });
+
+      expect(ai.enrichContent).toHaveBeenCalledTimes(1);
+      expect(prisma.contentEnrichment.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: expired.id,
+          status: {
+            in: [EnrichmentStatus.PENDING, EnrichmentStatus.FAILED],
+          },
+        },
+        data: {
+          status: EnrichmentStatus.PROCESSING,
+          errorMessage: null,
+          retryAfter: null,
+        },
       });
     });
 
