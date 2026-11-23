@@ -14,7 +14,9 @@ import {
 } from './llm-provider.interface';
 
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+// gemini-2.5-flash está deprecado (chamadas passam a ser redirecionadas para
+// gemini-3.5-flash-lite em 2026-12-01) — já apontamos direto para o sucessor.
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 /** Resiliência a falhas transitórias (rate limit/5xx/timeout). */
 export const MAX_ATTEMPTS = 3;
@@ -93,7 +95,7 @@ export class GeminiProvider implements LlmProvider {
         responseMimeType: 'application/json',
         temperature: 0.2,
         // Briefing editorial é mais longo (várias seções + conteúdo detalhado)
-        // e os tokens de "thinking" do 2.5-flash também contam aqui.
+        // e os tokens de "thinking" do modelo também contam aqui.
         maxOutputTokens: 8192,
       },
     });

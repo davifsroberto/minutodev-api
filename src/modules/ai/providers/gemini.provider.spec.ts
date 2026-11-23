@@ -42,7 +42,7 @@ const successfulResponse = (): Response =>
   fakeResponse(generateContentResponse(JSON.stringify(validOutput)));
 
 const DEFAULT_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
 
 describe('GeminiProvider', () => {
   let provider: GeminiProvider;
@@ -133,7 +133,7 @@ describe('GeminiProvider', () => {
     );
   });
 
-  it('usa gemini-2.5-flash como modelo padrão quando LLM_MODEL não está configurado', async () => {
+  it('usa gemini-3.5-flash-lite como modelo padrão quando LLM_MODEL não está configurado', async () => {
     process.env.GEMINI_API_KEY = 'secret-key';
     delete process.env.LLM_MODEL;
     const fetchSpy = jest
@@ -179,7 +179,7 @@ describe('GeminiProvider', () => {
 
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toBe(
-      'https://gemini-proxy.local/v1beta/models/gemini-2.5-flash:generateContent',
+      'https://gemini-proxy.local/v1beta/models/gemini-3.5-flash-lite:generateContent',
     );
   });
 

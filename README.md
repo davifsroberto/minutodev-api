@@ -182,7 +182,7 @@ Providers reconhecidos por `LLM_PROVIDER`:
 | --- | --- | --- |
 | `mock` | Implementado | Padrão; não chama API externa e retorna saída determinística. |
 | `deepseek` | Implementado | Usa `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `LLM_MODEL` e `LLM_TIMEOUT_MS`. |
-| `gemini` | Implementado | Usa `GEMINI_API_KEY`, `GEMINI_BASE_URL`, `LLM_MODEL` (padrão `gemini-2.5-flash`) e `LLM_TIMEOUT_MS`. |
+| `gemini` | Implementado | Usa `GEMINI_API_KEY`, `GEMINI_BASE_URL`, `LLM_MODEL` (padrão `gemini-3.5-flash-lite`) e `LLM_TIMEOUT_MS`. |
 | `openrouter` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
 | `ollama` | Placeholder, não implementado | O boot funciona, mas chamadas de IA falham com mensagem clara. |
 
@@ -193,7 +193,7 @@ do provider (`deepseek-chat` para `deepseek`); `LLM_TIMEOUT_MS` é opcional e us
 `30000`.
 
 Para ativar o Gemini (Google), defina `LLM_PROVIDER=gemini` e `GEMINI_API_KEY` no
-seu `.env`. O modelo é controlado por `LLM_MODEL` (vazio usa `gemini-2.5-flash`);
+seu `.env`. O modelo é controlado por `LLM_MODEL` (vazio usa `gemini-3.5-flash-lite`);
 `GEMINI_BASE_URL` é opcional (padrão: a API pública do Google,
 `https://generativelanguage.googleapis.com/v1beta`). A geração continua sob
 demanda: nada é chamado automaticamente.
