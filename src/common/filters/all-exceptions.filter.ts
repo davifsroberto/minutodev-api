@@ -42,6 +42,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = context.getRequest<HttpRequest>();
     const response = context.getResponse<HttpResponse>();
     const timestamp = new Date().toISOString();
+    const [path] = request.url.split('?', 1);
 
     const statusCode =
       exception instanceof HttpException
@@ -54,14 +55,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode,
       error,
       message,
-      path: request.url,
+      path,
       timestamp,
     };
 
     this.logException(exception, {
       error,
       method: request.method,
-      path: request.url,
+      path,
       statusCode,
       timestamp,
     });

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { AllExceptionsFilter } from './all-exceptions.filter';
@@ -119,6 +120,7 @@ describe('AllExceptionsFilter', () => {
       path: request.url,
       timestamp: expect.any(String),
     });
+
     expect(body.message).toBe(validationMessages);
     expectTimestampToBeIsoInstant(body.timestamp);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -127,6 +129,22 @@ describe('AllExceptionsFilter', () => {
         statusCode: 400,
       }),
     );
+  });
+
+  it('omits OAuth query parameters from the error response and log', () => {
+    request.url = '/auth/google/callback?code=example-code&state=example-state';
+
+    filter.catch(new UnauthorizedException(), createHost(request, response));
+
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/auth/google/callback' }),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/auth/google/callback' }),
+    );
+    expect(JSON.stringify(response.json.mock.calls)).not.toContain('example-');
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('example-');
   });
 
   it('sanitizes unexpected Error instances into a 500 envelope', () => {
