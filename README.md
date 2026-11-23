@@ -31,6 +31,25 @@
 $ npm install
 ```
 
+## Login com Google em desenvolvimento
+
+Abra o frontend em `http://localhost:4500` e registre
+`http://localhost:3500/auth/google/callback` como URI de redirecionamento no
+Google Cloud Console. O host do frontend deve coincidir com o do callback:
+alternar entre `localhost` e `127.0.0.1` impede o envio do cookie de state.
+Se o callback retornar `401`, inicie um novo login pelo frontend em vez de
+recarregar a URL do callback.
+
+Se o Node acusar `SELF_SIGNED_CERT_IN_CHAIN` ao falar com o Google no macOS,
+use os certificados confiáveis do sistema (Node 24.6 ou mais recente na linha 24):
+
+```bash
+NODE_USE_SYSTEM_CA=1 npm run start
+```
+
+Isso mantém a validação TLS ativa. Para rodar `npm run start` sem o prefixo,
+adicione `export NODE_USE_SYSTEM_CA=1` ao `~/.zshrc` e abra um novo terminal.
+
 ## Database (PostgreSQL + Prisma)
 
 A persistência usa **PostgreSQL** com **Prisma ORM** (Prisma 7). O schema, os
