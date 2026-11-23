@@ -24,7 +24,19 @@ const initialSources: ReadonlyArray<{
   url: string;
   category: string;
 }> = [
+  // Internacionais — IA: diversifica além da OpenAI (Anthropic não publica RSS).
   { name: 'OpenAI', url: 'https://openai.com/news/rss.xml', category: 'ai' },
+  {
+    name: 'DeepMind',
+    url: 'https://deepmind.google/blog/rss.xml',
+    category: 'ai',
+  },
+  {
+    name: 'Hugging Face',
+    url: 'https://huggingface.co/blog/feed.xml',
+    category: 'ai',
+  },
+  // Internacionais — geral.
   {
     name: 'Angular Blog',
     url: 'https://blog.angular.dev/feed',
@@ -37,10 +49,22 @@ const initialSources: ReadonlyArray<{
     url: 'https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml',
     category: 'opensource',
   },
+  // Frontpage (curada por votos) em vez de /newest (fire-hose não curado).
   {
-    name: 'Hacker News Newest',
-    url: 'https://hnrss.org/newest',
+    name: 'Hacker News',
+    url: 'https://hnrss.org/frontpage',
     category: 'community',
+  },
+  // Fontes BR — complemento em pt-BR (a IA agrega estrutura, não tradução).
+  {
+    name: 'TabNews',
+    url: 'https://www.tabnews.com.br/recentes/rss',
+    category: 'community',
+  },
+  {
+    name: 'Alura',
+    url: 'https://www.alura.com.br/artigos/rss',
+    category: 'career',
   },
 ];
 

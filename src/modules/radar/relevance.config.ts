@@ -1,10 +1,14 @@
 export const SOURCE_AUTHORITY_WEIGHTS: Record<string, number> = {
+  Alura: 0.6,
   'Angular Blog': 0.9,
+  DeepMind: 0.9,
   'Dev.to': 0.55,
   'GitHub Trending RSS': 0.7,
-  'Hacker News Newest': 0.65,
+  'Hacker News': 0.7,
+  'Hugging Face': 0.8,
   InfoQ: 0.8,
   OpenAI: 0.95,
+  TabNews: 0.6,
 };
 
 export const DEFAULT_AUTHORITY_WEIGHT = 0.5;
