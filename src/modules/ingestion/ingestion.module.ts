@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ContentsModule } from '../contents/contents.module';
+import { ImagesModule } from '../images/images.module';
 import { SourcesModule } from '../sources/sources.module';
 import { IngestionService } from './ingestion.service';
 import { RssNormalizerService } from './rss/rss-normalizer.service';
@@ -14,7 +15,7 @@ import { RssParserService } from './rss/rss-parser.service';
  * futuro, para o módulo radar/agendador.
  */
 @Module({
-  imports: [SourcesModule, ContentsModule],
+  imports: [SourcesModule, ContentsModule, ImagesModule],
   providers: [IngestionService, RssParserService, RssNormalizerService],
   exports: [IngestionService],
 })

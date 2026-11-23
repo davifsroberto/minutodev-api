@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SourceType } from '@prisma/client';
 
 import { ContentsService } from '../contents/contents.service';
+import { OpenGraphImageService } from '../images/open-graph.service';
 import { SourcesService } from '../sources/sources.service';
 import { RssNormalizerService } from './rss/rss-normalizer.service';
 import { RssParserService } from './rss/rss-parser.service';
@@ -31,6 +32,7 @@ export class IngestionService {
     private readonly contents: ContentsService,
     private readonly parser: RssParserService,
     private readonly normalizer: RssNormalizerService,
+    private readonly openGraph: OpenGraphImageService,
   ) {}
 
   async ingestRss(): Promise<IngestionSummary> {
@@ -49,11 +51,9 @@ export class IngestionService {
       summary.sourcesProcessed += 1;
 
       let feedItems;
-      let feedImageUrl: string | null = null;
       try {
         const feed = await this.parser.parseUrl(source.url);
         feedItems = feed.items ?? [];
-        feedImageUrl = feed.image?.url ?? null;
       } catch (error) {
         summary.errors += 1;
         this.logger.error(
@@ -66,12 +66,19 @@ export class IngestionService {
 
       for (const item of feedItems) {
         try {
-          const data = this.normalizer.normalize(item, source, feedImageUrl);
+          const data = this.normalizer.normalize(item, source);
 
           if (!data) {
             summary.errors += 1;
             this.logger.warn(`Item sem URL ignorado em "${source.name}".`);
             continue;
+          }
+
+          // Sem imagem por-artigo no RSS: tenta o og:image da página para que a
+          // thumb da listagem já nasça correta (não deixa para o enrichment, que
+          // só roda quando o usuário abre o conteúdo). Best-effort: nunca lança.
+          if (!data.imageUrl) {
+            data.imageUrl = await this.openGraph.resolveImageUrl(data.url);
           }
 
           const result = await this.contents.createIfNew(data);

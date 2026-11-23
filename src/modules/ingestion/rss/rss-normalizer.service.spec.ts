@@ -106,14 +106,15 @@ describe('RssNormalizerService', () => {
       expect(result?.imageUrl).toBe('https://cdn.example.test/body.png');
     });
 
-    it('cai para a imagem do feed quando o item não tem imagem', () => {
+    it('NÃO usa a imagem do canal do feed: sem imagem por-artigo, fica null', () => {
       const result = normalizer.normalize(
         baseItem({ content: 'Sem imagem.' }),
         source,
-        'https://cdn.example.test/feed-logo.png',
       );
 
-      expect(result?.imageUrl).toBe('https://cdn.example.test/feed-logo.png');
+      // A imagem do canal (genérica, igual em todos os posts) não entra mais —
+      // o chamador tenta og:image e, por fim, a capa gerada pelo título.
+      expect(result?.imageUrl).toBeNull();
     });
 
     it('retorna null quando não há imagem em lugar nenhum', () => {
@@ -136,7 +137,7 @@ describe('RssNormalizerService', () => {
       expect(result?.imageUrl).toBeNull();
     });
 
-    it('prioriza a enclosure sobre media, corpo e feed', () => {
+    it('prioriza a enclosure sobre media e corpo', () => {
       const result = normalizer.normalize(
         baseItem({
           enclosure: {
@@ -151,7 +152,6 @@ describe('RssNormalizerService', () => {
           content: '<img src="https://cdn.example.test/body.png">',
         }),
         source,
-        'https://cdn.example.test/feed-logo.png',
       );
 
       expect(result?.imageUrl).toBe('https://cdn.example.test/enclosure.jpg');

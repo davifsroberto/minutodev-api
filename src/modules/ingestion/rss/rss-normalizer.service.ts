@@ -23,7 +23,6 @@ export class RssNormalizerService {
   normalize(
     item: RssItem,
     source: Source,
-    feedImageUrl?: string | null,
   ): Prisma.ContentUncheckedCreateInput | null {
     const url = item.link ?? item.guid;
     if (!url) return null;
@@ -47,7 +46,7 @@ export class RssNormalizerService {
       category: source.category,
       tags: [],
       contentType: ContentType.ARTICLE,
-      imageUrl: resolveRssImageUrl(item, feedImageUrl),
+      imageUrl: resolveRssImageUrl(item),
       rawTitle: item.title ?? null,
       rawSummary,
       rawData: this.toJson(item),

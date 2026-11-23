@@ -29,9 +29,12 @@ export class RssParserService {
     },
     customFields: {
       // Mídia não é capturada por padrão; usamos para extrair a imagem do item.
+      // `content:encoded` guarda o HTML completo (com a imagem real do post) em
+      // feeds tipo Medium, onde o `content` padrão vem vazio.
       item: [
         ['media:content', 'mediaContent', { keepArray: true }],
         ['media:thumbnail', 'mediaThumbnail', { keepArray: true }],
+        ['content:encoded', 'contentEncoded'],
       ],
     },
   });
