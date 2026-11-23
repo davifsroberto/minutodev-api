@@ -9,11 +9,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Min } from 'class-validator';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../test/support/http-test-app';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { configureBootstrapGlobals } from './bootstrap';
 
 class ValidationProbeQueryDto {
   @IsOptional()
@@ -39,6 +41,7 @@ class BootstrapIntegrationModule {}
 
 describe('main.ts bootstrap globals', () => {
   let app: INestApplication;
+  let http: HttpTestClient;
   let previousCorsOrigins: string | undefined;
 
   beforeAll(async () => {
@@ -49,9 +52,7 @@ describe('main.ts bootstrap globals', () => {
     previousCorsOrigins = process.env.CORS_ORIGINS;
     delete process.env.CORS_ORIGINS;
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
   });
 
   afterAll(async () => {
@@ -65,14 +66,11 @@ describe('main.ts bootstrap globals', () => {
   });
 
   it('keeps the root health route available without a global prefix', async () => {
-    await request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+    await http.get('/').expect(200).expect('Hello World!');
   });
 
   it('strips unknown query params and transforms known query params', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/validation-probe?page=2&contentType=ARTICLE&tags=nestjs')
       .expect(200);
 
@@ -80,16 +78,14 @@ describe('main.ts bootstrap globals', () => {
   });
 
   it('does not reject non-whitelisted query params', async () => {
-    await request(app.getHttpServer())
+    await http
       .get('/validation-probe?contentType=ARTICLE&tags=nestjs')
       .expect(200)
       .expect({});
   });
 
   it('serializes unknown routes through the global exception filter', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/does-not-exist')
-      .expect(404);
+    const response = await http.get('/does-not-exist').expect(404);
 
     expect(response.body).toEqual({
       statusCode: 404,
@@ -104,18 +100,14 @@ describe('main.ts bootstrap globals', () => {
   });
 
   it('serves the Swagger UI at /docs', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/docs')
-      .expect(200);
+    const response = await http.get('/docs').expect(200);
 
     expect(response.headers['content-type']).toContain('text/html');
     expect(response.text).toContain('Swagger UI');
   });
 
   it('serves parseable OpenAPI JSON under /docs', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/docs/json')
-      .expect(200);
+    const response = await http.get('/docs/json').expect(200);
 
     expect(response.body).toEqual(
       expect.objectContaining({
@@ -126,7 +118,7 @@ describe('main.ts bootstrap globals', () => {
   });
 
   it('bootstraps without cross-origin access when CORS_ORIGINS is empty', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/')
       .set('Origin', 'http://localhost:4500')
       .expect(200);

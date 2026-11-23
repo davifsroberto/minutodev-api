@@ -16,10 +16,12 @@ import {
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { configureBootstrapGlobals } from '../../bootstrap';
 import { AUTH_COOKIE_NAME } from '../auth/auth.config';
 import { ContentsService } from '../contents/contents.service';
 import { HistoryService } from '../history/history.service';
@@ -141,6 +143,7 @@ describe('RadarController integration', () => {
   const disallowedOrigin = 'http://disallowed.example.test';
   let previousCorsOrigins: string | undefined;
   let app: INestApplication;
+  let http: HttpTestClient;
   let source: Source;
   let relatedSource: Source;
   let cookieWithInterests: string;
@@ -187,9 +190,7 @@ describe('RadarController integration', () => {
     previousCorsOrigins = process.env.CORS_ORIGINS;
     process.env.CORS_ORIGINS = allowedOrigin;
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
     await prisma.$connect();
     await prisma.source.deleteMany({
       where: {
@@ -440,9 +441,7 @@ describe('RadarController integration', () => {
   });
 
   const getRadar = async (query = ''): Promise<RadarResponse> => {
-    const response = await request(app.getHttpServer())
-      .get(`/radar/today${query}`)
-      .expect(200);
+    const response = await http.get(`/radar/today${query}`).expect(200);
 
     return response.body as RadarResponse;
   };
@@ -635,17 +634,20 @@ describe('RadarController integration', () => {
     ['/radar/today?limitPerSection=abc', 400, 'BAD_REQUEST'],
   ])(
     'returns an error envelope for invalid query %s',
-    async (path, status, error) => {
-      const response = await request(app.getHttpServer())
-        .get(path)
-        .expect(status);
+    async (url, status, error) => {
+      const response = await http.get(url).expect(status);
 
-      expectErrorEnvelope(response.body as ErrorEnvelope, status, error, path);
+      expectErrorEnvelope(
+        response.body as ErrorEnvelope,
+        status,
+        error,
+        '/radar/today',
+      );
     },
   );
 
   it('allows the configured origin via CORS on GET /radar/today', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/radar/today')
       .set('Origin', allowedOrigin)
       .expect(200);
@@ -654,7 +656,7 @@ describe('RadarController integration', () => {
   });
 
   it('does not echo a disallowed origin in Access-Control-Allow-Origin', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/radar/today')
       .set('Origin', disallowedOrigin)
       .expect(200);
@@ -669,7 +671,7 @@ describe('RadarController integration', () => {
       cookie: string,
       query = '',
     ): Promise<RadarForYouResponse> => {
-      const response = await request(app.getHttpServer())
+      const response = await http
         .get(`/radar/for-you${query}`)
         .set('Cookie', cookie)
         .expect(200);
@@ -678,9 +680,7 @@ describe('RadarController integration', () => {
     };
 
     it('rejects anonymous requests with the 401 envelope', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/radar/for-you')
-        .expect(401);
+      const response = await http.get('/radar/for-you').expect(401);
 
       expectErrorEnvelope(
         response.body as ErrorEnvelope,
@@ -774,7 +774,7 @@ describe('RadarController integration', () => {
         'trend community',
       ]);
 
-      const invalid = await request(app.getHttpServer())
+      const invalid = await http
         .get('/radar/for-you?limitPerSection=0')
         .set('Cookie', cookieWithInterests)
         .expect(400);
@@ -783,7 +783,7 @@ describe('RadarController integration', () => {
         invalid.body as ErrorEnvelope,
         400,
         'BAD_REQUEST',
-        '/radar/for-you?limitPerSection=0',
+        '/radar/for-you',
       );
     });
 
@@ -792,7 +792,7 @@ describe('RadarController integration', () => {
         cookie: string,
         contentId: string,
       ): Promise<void> => {
-        await request(app.getHttpServer())
+        await http
           .post(`/me/history/contents/${contentId}/open`)
           .set('Cookie', cookie)
           .expect(200);
@@ -802,7 +802,7 @@ describe('RadarController integration', () => {
         cookie: string,
         contentId: string,
       ): Promise<void> => {
-        await request(app.getHttpServer())
+        await http
           .post(`/me/history/contents/${contentId}/read`)
           .set('Cookie', cookie)
           .expect(200);

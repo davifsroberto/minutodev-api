@@ -7,10 +7,12 @@ import { AuthProvider, PrismaClient, User } from '@prisma/client';
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { configureBootstrapGlobals } from '../../bootstrap';
 import { AUTH_COOKIE_NAME } from '../auth/auth.config';
 
 expand(loadEnv());
@@ -37,6 +39,7 @@ describe('InterestsController integration', () => {
   });
 
   let app: INestApplication;
+  let http: HttpTestClient;
   let jwt: JwtService;
   let user: User;
   let sessionCookie: string;
@@ -46,9 +49,7 @@ describe('InterestsController integration', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
 
     jwt = app.get(JwtService);
     await prisma.$connect();
@@ -88,9 +89,7 @@ describe('InterestsController integration', () => {
   });
 
   it('rejeita GET /me/interests sem cookie com envelope 401', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/me/interests')
-      .expect(401);
+    const response = await http.get('/me/interests').expect(401);
 
     expect(response.body as ErrorEnvelope).toEqual({
       statusCode: 401,
@@ -102,7 +101,7 @@ describe('InterestsController integration', () => {
   });
 
   it('retorna lista vazia para um usuário sem interesses (Radar Geral)', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/me/interests')
       .set('Cookie', sessionCookie)
       .expect(200);
@@ -111,7 +110,7 @@ describe('InterestsController integration', () => {
   });
 
   it('persiste interesses no PUT e os devolve ordenados por label', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: [slugB, slugA] })
@@ -120,7 +119,7 @@ describe('InterestsController integration', () => {
     // Ordenado por label: "Tópico Alfa" antes de "Tópico Beta".
     expect(response.body).toEqual({ interests: [slugA, slugB] });
 
-    const getAfter = await request(app.getHttpServer())
+    const getAfter = await http
       .get('/me/interests')
       .set('Cookie', sessionCookie)
       .expect(200);
@@ -128,7 +127,7 @@ describe('InterestsController integration', () => {
   });
 
   it('faz replace total: um novo PUT substitui o conjunto anterior', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: [slugA] })
@@ -138,7 +137,7 @@ describe('InterestsController integration', () => {
   });
 
   it('aceita array vazio limpando os interesses (volta ao Radar Geral)', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: [] })
@@ -148,7 +147,7 @@ describe('InterestsController integration', () => {
   });
 
   it('rejeita slug fora do catálogo com 400', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: [slugA, 'tema-que-nao-existe'] })
@@ -158,7 +157,7 @@ describe('InterestsController integration', () => {
   });
 
   it('rejeita tema desabilitado com 400 (catálogo só aceita habilitados)', async () => {
-    await request(app.getHttpServer())
+    await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: [slugDisabled] })
@@ -166,7 +165,7 @@ describe('InterestsController integration', () => {
   });
 
   it('rejeita payload inválido (interests não-array) com 400 do ValidationPipe', async () => {
-    await request(app.getHttpServer())
+    await http
       .put('/me/interests')
       .set('Cookie', sessionCookie)
       .send({ interests: 'ai' })
@@ -174,7 +173,7 @@ describe('InterestsController integration', () => {
   });
 
   it('expõe o catálogo de temas habilitados em GET /interests/catalog', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/interests/catalog')
       .set('Cookie', sessionCookie)
       .expect(200);
@@ -190,6 +189,6 @@ describe('InterestsController integration', () => {
   });
 
   it('rejeita GET /interests/catalog sem cookie com 401', async () => {
-    await request(app.getHttpServer()).get('/interests/catalog').expect(401);
+    await http.get('/interests/catalog').expect(401);
   });
 });

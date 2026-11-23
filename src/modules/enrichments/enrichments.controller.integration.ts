@@ -13,10 +13,12 @@ import {
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { configureBootstrapGlobals } from '../../bootstrap';
 
 expand(loadEnv());
 
@@ -85,6 +87,7 @@ describe('EnrichmentsController integration', () => {
   });
 
   let app: INestApplication;
+  let http: HttpTestClient;
   let source: Source;
   let summaryContentId: string;
   let nullSummaryContentId: string;
@@ -94,9 +97,7 @@ describe('EnrichmentsController integration', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
     await prisma.$connect();
     await prisma.source.deleteMany({
       where: {
@@ -158,7 +159,7 @@ describe('EnrichmentsController integration', () => {
   const getEnrichment = async (
     contentId: string,
   ): Promise<EnrichmentResponse> => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get(`/contents/${contentId}/enrichment`)
       .expect(200);
 
@@ -231,7 +232,7 @@ describe('EnrichmentsController integration', () => {
   it('returns a 404 envelope for an unknown content id without persisting anything', async () => {
     const id = '00000000-0000-4000-8000-000000000000';
     const path = `/contents/${id}/enrichment`;
-    const response = await request(app.getHttpServer()).get(path).expect(404);
+    const response = await http.get(path).expect(404);
 
     expectErrorEnvelope(response.body as ErrorEnvelope, 404, 'NOT_FOUND', path);
 

@@ -7,10 +7,12 @@ import { AuthProvider, PrismaClient, User } from '@prisma/client';
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { configureBootstrapGlobals } from '../../bootstrap';
 import { AUTH_COOKIE_NAME } from './auth.config';
 import { STATE_COOKIE_NAME } from './cookie-state.store';
 
@@ -35,6 +37,7 @@ describe('AuthController integration', () => {
   });
 
   let app: INestApplication;
+  let http: HttpTestClient;
   let jwt: JwtService;
   let user: User;
   let sessionCookie: string;
@@ -44,9 +47,7 @@ describe('AuthController integration', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
 
     jwt = app.get(JwtService);
     await prisma.$connect();
@@ -72,9 +73,7 @@ describe('AuthController integration', () => {
   });
 
   it('rejeita /auth/me sem cookie com envelope de erro 401', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/auth/me')
-      .expect(401);
+    const response = await http.get('/auth/me').expect(401);
 
     expect(response.body as ErrorEnvelope).toEqual({
       statusCode: 401,
@@ -86,7 +85,7 @@ describe('AuthController integration', () => {
   });
 
   it('retorna os dados básicos em /auth/me com cookie de sessão válido', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/auth/me')
       .set('Cookie', sessionCookie)
       .expect(200);
@@ -102,10 +101,7 @@ describe('AuthController integration', () => {
   it('rejeita /auth/me quando o usuário do token não existe mais', async () => {
     const ghost = `${AUTH_COOKIE_NAME}=${jwt.sign({ sub: 'nao-existe' })}`;
 
-    await request(app.getHttpServer())
-      .get('/auth/me')
-      .set('Cookie', ghost)
-      .expect(401);
+    await http.get('/auth/me').set('Cookie', ghost).expect(401);
   });
 
   it('rejeita /auth/me com token expirado', async () => {
@@ -114,23 +110,18 @@ describe('AuthController integration', () => {
       { expiresIn: -10 },
     )}`;
 
-    await request(app.getHttpServer())
-      .get('/auth/me')
-      .set('Cookie', expired)
-      .expect(401);
+    await http.get('/auth/me').set('Cookie', expired).expect(401);
   });
 
   it('rejeita /auth/me com token malformado', async () => {
-    await request(app.getHttpServer())
+    await http
       .get('/auth/me')
       .set('Cookie', `${AUTH_COOKIE_NAME}=isto-nao-e-um-jwt`)
       .expect(401);
   });
 
   it('encerra a sessão em /auth/logout limpando o cookie httpOnly', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/auth/logout')
-      .expect(200);
+    const response = await http.post('/auth/logout').expect(200);
 
     expect(response.body).toEqual({ success: true });
 
@@ -143,16 +134,14 @@ describe('AuthController integration', () => {
   });
 
   it('continua negando /auth/me com o cookie já limpo pelo logout', async () => {
-    await request(app.getHttpServer())
+    await http
       .get('/auth/me')
       .set('Cookie', `${AUTH_COOKIE_NAME}=`)
       .expect(401);
   });
 
   it('inicia o fluxo OAuth redirecionando para o Google com proteção de state', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/auth/google')
-      .expect(302);
+    const response = await http.get('/auth/google').expect(302);
 
     const location = response.headers['location'] as string;
     expect(location).toContain('accounts.google.com');

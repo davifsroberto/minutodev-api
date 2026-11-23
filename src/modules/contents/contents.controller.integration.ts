@@ -1,5 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -14,10 +13,12 @@ import {
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { AllExceptionsFilter } from '../../common/filters/all-exceptions.filter';
 import { PrismaService } from '../../database/prisma.service';
 import { ContentsService } from './contents.service';
 
@@ -55,27 +56,6 @@ type ErrorEnvelope = {
   message: string | string[];
   path: string;
   timestamp: string;
-};
-
-const configureBootstrapGlobals = (app: INestApplication): void => {
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-    }),
-  );
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('minutoDev API')
-    .setDescription('minutoDev HTTP API')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-
-  SwaggerModule.setup('docs', app, document, {
-    jsonDocumentUrl: 'docs/json',
-  });
 };
 
 const expectErrorEnvelope = (
@@ -119,6 +99,7 @@ describe('ContentsController integration', () => {
   });
 
   let app: INestApplication;
+  let http: HttpTestClient;
   let backendSource: Source;
   let frontendSource: Source;
   let allSeedRows: SeedContent[];
@@ -141,9 +122,7 @@ describe('ContentsController integration', () => {
       })
       .compile();
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
     await prisma.$connect();
     await prisma.source.deleteMany({
       where: {
@@ -281,9 +260,7 @@ describe('ContentsController integration', () => {
   });
 
   const getContents = async (query = ''): Promise<PaginatedContentResponse> => {
-    const response = await request(app.getHttpServer())
-      .get(`/contents${query}`)
-      .expect(200);
+    const response = await http.get(`/contents${query}`).expect(200);
 
     return response.body as PaginatedContentResponse;
   };
@@ -376,12 +353,15 @@ describe('ContentsController integration', () => {
     ['/contents?status=BOGUS', 400, 'BAD_REQUEST'],
   ])(
     'returns an error envelope for invalid query %s',
-    async (path, status, error) => {
-      const response = await request(app.getHttpServer())
-        .get(path)
-        .expect(status);
+    async (url, status, error) => {
+      const response = await http.get(url).expect(status);
 
-      expectErrorEnvelope(response.body as ErrorEnvelope, status, error, path);
+      expectErrorEnvelope(
+        response.body as ErrorEnvelope,
+        status,
+        error,
+        '/contents',
+      );
     },
   );
 
@@ -402,9 +382,7 @@ describe('ContentsController integration', () => {
   });
 
   it('returns only current UTC-day rows from GET /contents/today', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/contents/today?limit=20')
-      .expect(200);
+    const response = await http.get('/contents/today?limit=20').expect(200);
     const body = response.body as PaginatedContentResponse;
 
     expect(body.data.map((content) => content.title)).toEqual([
@@ -417,9 +395,7 @@ describe('ContentsController integration', () => {
   });
 
   it('returns a single content item with source details', async () => {
-    const response = await request(app.getHttpServer())
-      .get(`/contents/${detailRow.id}`)
-      .expect(200);
+    const response = await http.get(`/contents/${detailRow.id}`).expect(200);
     const body = response.body as ContentResponse;
 
     expect(body).toEqual(
@@ -438,7 +414,7 @@ describe('ContentsController integration', () => {
   it('returns a 404 envelope for an unknown content id', async () => {
     const id = '00000000-0000-4000-8000-000000000000';
     const path = `/contents/${id}`;
-    const response = await request(app.getHttpServer()).get(path).expect(404);
+    const response = await http.get(path).expect(404);
 
     expectErrorEnvelope(response.body as ErrorEnvelope, 404, 'NOT_FOUND', path);
   });
@@ -446,9 +422,7 @@ describe('ContentsController integration', () => {
   it('returns an empty today response on a quiet UTC day', async () => {
     currentNow = new Date('2099-06-20T14:00:00.000Z');
 
-    const response = await request(app.getHttpServer())
-      .get('/contents/today')
-      .expect(200);
+    const response = await http.get('/contents/today').expect(200);
     const body = response.body as PaginatedContentResponse;
 
     expect(body).toEqual({

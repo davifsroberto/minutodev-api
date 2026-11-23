@@ -13,10 +13,12 @@ import {
 
 import { config as loadEnv } from 'dotenv';
 import { expand } from 'dotenv-expand';
-import request from 'supertest';
 
+import {
+  createHttpTestApp,
+  type HttpTestClient,
+} from '../../../test/support/http-test-app';
 import { AppModule } from '../../app.module';
-import { configureBootstrapGlobals } from '../../bootstrap';
 import { AUTH_COOKIE_NAME } from '../auth/auth.config';
 import { HistoryEntryDto } from './dto/history-entry.dto';
 import { HistoryItemDto } from './dto/history-item.dto';
@@ -40,6 +42,7 @@ describe('HistoryController integration', () => {
   });
 
   let app: INestApplication;
+  let http: HttpTestClient;
   let jwt: JwtService;
   let userA: User;
   let userB: User;
@@ -53,9 +56,7 @@ describe('HistoryController integration', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    configureBootstrapGlobals(app);
-    await app.init();
+    ({ app, http } = await createHttpTestApp(moduleFixture));
 
     jwt = app.get(JwtService);
     await prisma.$connect();
@@ -126,17 +127,13 @@ describe('HistoryController integration', () => {
   });
 
   it('rejeita as rotas de histórico sem cookie com 401', async () => {
-    await request(app.getHttpServer()).get('/me/history').expect(401);
-    await request(app.getHttpServer())
-      .post(`/me/history/contents/${contentOne.id}/open`)
-      .expect(401);
-    await request(app.getHttpServer())
-      .post(`/me/history/contents/${contentOne.id}/read`)
-      .expect(401);
+    await http.get('/me/history').expect(401);
+    await http.post(`/me/history/contents/${contentOne.id}/open`).expect(401);
+    await http.post(`/me/history/contents/${contentOne.id}/read`).expect(401);
   });
 
   it('cria o registro na primeira abertura com openCount 1', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .post(`/me/history/contents/${contentOne.id}/open`)
       .set('Cookie', cookieA)
       .expect(200);
@@ -150,7 +147,7 @@ describe('HistoryController integration', () => {
   });
 
   it('reabrir incrementa openCount e avança lastOpenedAt sem duplicar registro', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .post(`/me/history/contents/${contentOne.id}/open`)
       .set('Cookie', cookieA)
       .expect(200);
@@ -174,7 +171,7 @@ describe('HistoryController integration', () => {
       },
     });
 
-    const response = await request(app.getHttpServer())
+    const response = await http
       .post(`/me/history/contents/${contentOne.id}/read`)
       .set('Cookie', cookieA)
       .expect(200);
@@ -188,12 +185,12 @@ describe('HistoryController integration', () => {
   });
 
   it('é idempotente: repetir o read preserva o primeiro readAt', async () => {
-    const first = await request(app.getHttpServer())
+    const first = await http
       .post(`/me/history/contents/${contentOne.id}/read`)
       .set('Cookie', cookieA)
       .expect(200);
 
-    const second = await request(app.getHttpServer())
+    const second = await http
       .post(`/me/history/contents/${contentOne.id}/read`)
       .set('Cookie', cookieA)
       .expect(200);
@@ -204,7 +201,7 @@ describe('HistoryController integration', () => {
   });
 
   it('marca como lido sem abertura prévia criando o registro já lido', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .post(`/me/history/contents/${contentTwo.id}/read`)
       .set('Cookie', cookieA)
       .expect(200);
@@ -216,18 +213,18 @@ describe('HistoryController integration', () => {
   });
 
   it('retorna 404 para conteúdo inexistente', async () => {
-    await request(app.getHttpServer())
+    await http
       .post('/me/history/contents/nao-existe/open')
       .set('Cookie', cookieA)
       .expect(404);
-    await request(app.getHttpServer())
+    await http
       .post('/me/history/contents/nao-existe/read')
       .set('Cookie', cookieA)
       .expect(404);
   });
 
   it('lista o histórico ordenado por último acesso com dados do conteúdo', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/me/history')
       .set('Cookie', cookieA)
       .expect(200);
@@ -257,7 +254,7 @@ describe('HistoryController integration', () => {
   });
 
   it('isola o histórico por usuário: user B não vê o histórico de A', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/me/history')
       .set('Cookie', cookieB)
       .expect(200);
@@ -266,12 +263,12 @@ describe('HistoryController integration', () => {
     expect(body.data).toEqual([]);
     expect(body.meta.total).toBe(0);
 
-    await request(app.getHttpServer())
+    await http
       .post(`/me/history/contents/${contentOne.id}/open`)
       .set('Cookie', cookieB)
       .expect(200);
 
-    const afterOpen = await request(app.getHttpServer())
+    const afterOpen = await http
       .get('/me/history')
       .set('Cookie', cookieB)
       .expect(200);
@@ -288,7 +285,7 @@ describe('HistoryController integration', () => {
   });
 
   it('respeita a paginação do GET /me/history', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await http
       .get('/me/history')
       .query({ page: 1, limit: 1 })
       .set('Cookie', cookieA)

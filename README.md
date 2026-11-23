@@ -286,12 +286,16 @@ $ npm run start:prod
 # unit tests
 $ npm run test
 
-# e2e tests
-$ npm run test:e2e
+# integration tests
+$ npm run test:integration
 
-# test coverage
-$ npm run test:cov
+# unit and integration tests
+$ npm run test:all
 ```
+
+HTTP integration suites use [createHttpTestApp](./test/support/http-test-app.ts)
+to apply the real API bootstrap and create a Supertest client pointed at an
+ephemeral port on `127.0.0.1`. Each suite closes its own app in `afterAll`.
 
 ## Deployment
 
